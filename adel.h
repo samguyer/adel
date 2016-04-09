@@ -4,7 +4,6 @@
 #ifndef ADEL_V2
 #define ADEL_V2
 
-
 /** Adel state
  *
  * This class holds all the runtime information for a single function
@@ -16,7 +15,7 @@ class Astate
 public:
   uint16_t line;
   uint16_t wait;
-  uint16_5 i;
+  uint16_t i;
   Astate() : line(0), wait(0), i(0) {}
 };
 
@@ -26,6 +25,8 @@ public:
  *  functions. This implementation limits the tree to a binary tree, so
  *  that we can use a heap representation. This restriction means that we
  *  must use a fork-join model of parallelism. */
+
+#define MAX_DEPTH 5
 extern Astate adel_stack[1 << MAX_DEPTH];
 
 /** Current function */
@@ -35,11 +36,8 @@ extern uint16_t adel_current;
  * Using the heap structure, this is really fast. */
 #define achild(c) ((a_my_index << 1) + c)
 
-/** Start a new function */
+/** Start a new async function call */
 #define ainit_child(c) adel_stack[achild(c)].line = 0
-
-/** Call a function */
-
 
 #define ADEL_FINALLY 99999
 
@@ -130,19 +128,19 @@ public:
     f_status = f;					\
     if ( f_status.cont() ) return Adel::CONT;
 
-/** await
+/** awaituntil
  *  Wait asynchronously for a condition to become true.
  */
-#define await( c )					\
+#define awaituntil( c )					\
     a_me.line = __LINE__;				\
  case __LINE__:						\
     if ( ! ( c ) ) return Adel::CONT
 
-/** adountil
+/** aforatmost
  *
  *  Semantics: do f until it completes, or until the timeout
  */
-#define adountil( t, f )				\
+#define aforatmost( t, f )				\
     a_me.line = __LINE__;				\
     a_me.wait = millis() + t;				\
   case __LINE__:					\
@@ -167,20 +165,21 @@ public:
     if (f_status.cont() || g_status.cont())		\
       return Adel::CONT;   }
 
-/** auntileither
+/** awhosfirst
  *
  *  Semantics: execute c and f asynchronously until either one of them
  *  finishes (contrast with aboth). This construct behaves like a
- *  conditional statement: it should be followed by a true and option false
- *  statement, which are executed depending on whether the first function
- *  finished first or the second one did. Example use:
- *     auntil( button(), flash_led() ) { 
+ *  conditional statement: it should be followed by a true statement and
+ *  optional false statement, which are executed depending on whether the
+ *  first function finished first or the second one did. Example use:
+ *
+ *     awhosfirst( button(), flash_led() ) { 
  *       // button finished first 
  *     } else {
  *       // light finished first
  *     }
  */
-#define auntileither( f , g )				\
+#define awhosfirst( f , g )				\
     a_me.line = __LINE__;				\
     ainit_child(1);					\
     ainit_child(2);					\
@@ -192,17 +191,19 @@ public:
     if (f_status.cont() && g_status.cont()) return Adel::CONT;	\
     if (f_status.done())
 
-/** afor
+/** afor_i
  * 
  * Adel-friendly for loop. The issue is that the Adel execution model makes
- * it hard to have local variables, like the loop control variable. 
+ * it hard to have local variables, like the loop control variable. This
+ * version of a for loop is more like a Fortran for loop: it just gives you
+ * a variables that ranges over sequence of values. The name of the loop
+ * variable is baked into it.
  */
-#define afor( v, cond, inc )				\
+#define afor_i( start, end, step )			\
     a_me.line = __LINE__;				\
-    a_me.wait = millis() + t;				\
+    a_me.i = start;					\
   case __LINE__:					\
-    if (millis() < a_me.wait) return Adel::CONT;
-  
+    for (int i = a_me.i; i <= end; a_me.i = i = (i + step))
 
 /** areturn
  * 

@@ -4,7 +4,7 @@
 // ----------------------------------------------------------------------
 // Global storage for the stack and state
 
-uint16_t adel_step[64];
-uint32_t adel_wait[64];
+Astate adel_stack[1 << MAX_DEPTH];
+
 uint16_t adel_current;
 
