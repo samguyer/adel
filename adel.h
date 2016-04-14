@@ -26,7 +26,10 @@ public:
  *  that we can use a heap representation. This restriction means that we
  *  must use a fork-join model of parallelism. */
 
-#define MAX_DEPTH 5
+#ifndef ADEL_DEPTH
+#define ADEL_DEPTH 5
+#endif
+
 extern Astate adel_stack[1 << MAX_DEPTH];
 
 /** Current function */
@@ -63,15 +66,24 @@ public:
   bool done() const { return m_status == DONE; }
   bool cont() const { return m_status == CONT; }
 };
-  
-/** astart
+
+/** aonce
  *
  *  Use astart in the Arduino loop function to initiate the Adel function f
  *  (and run all Adel functions below it).
  */
-#define astart( f ) \
+#define aonce( f )  \
   adel_current = 0; \
   f;
+
+/** aforever
+ *
+ *  Run the top adel function over and over.
+ */
+#define aforever( f )					\
+  adel_current = 0;					\
+  Adel f_status = f;					\
+  if (f_status.done()) { adel_stack[0].line = 0; }
 
 /** abegin
  *
@@ -129,7 +141,8 @@ public:
     if ( f_status.cont() ) return Adel::CONT;
 
 /** awaituntil
- *  Wait asynchronously for a condition to become true.
+ *  Wait asynchronously for a condition to become true. Note that this
+ *  condition CANNOT be an adel function.
  */
 #define awaituntil( c )					\
     a_me.line = __LINE__;				\
@@ -165,7 +178,7 @@ public:
     if (f_status.cont() || g_status.cont())		\
       return Adel::CONT;   }
 
-/** awhosfirst
+/** auntileither
  *
  *  Semantics: execute c and f asynchronously until either one of them
  *  finishes (contrast with aboth). This construct behaves like a
@@ -173,13 +186,13 @@ public:
  *  optional false statement, which are executed depending on whether the
  *  first function finished first or the second one did. Example use:
  *
- *     awhosfirst( button(), flash_led() ) { 
+ *     auntileither( button(), flash_led() ) { 
  *       // button finished first 
  *     } else {
  *       // light finished first
  *     }
  */
-#define awhosfirst( f , g )				\
+#define auntileither( f , g )					\
     a_me.line = __LINE__;				\
     ainit_child(1);					\
     ainit_child(2);					\
@@ -203,7 +216,7 @@ public:
     a_me.line = __LINE__;				\
     a_me.i = start;					\
   case __LINE__:					\
-    for (int i = a_me.i; i <= end; a_me.i = i = (i + step))
+    for (int i = a_me.i; i <= end; a_me.i = (i = (i + step)))
 
 /** areturn
  * 
