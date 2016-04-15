@@ -178,6 +178,21 @@ public:
     if (f_status.cont() || g_status.cont())		\
       return Adel::CONT;   }
 
+/** adountil
+ *
+ *  Semantics: execute f until g completes.
+ */
+#define adountil( f , g )				\
+    a_me.line = __LINE__;				\
+    ainit_child(1);					\
+    ainit_child(2);					\
+  case __LINE__: 					\
+    adel_current = achild(1);				\
+    f_status = f;					\
+    adel_current = achild(2);				\
+    g_status = g;					\
+    if (g_status.cont()) return Adel::CONT;
+
 /** auntileither
  *
  *  Semantics: execute c and f asynchronously until either one of them
@@ -192,7 +207,7 @@ public:
  *       // light finished first
  *     }
  */
-#define auntileither( f , g )					\
+#define auntileither( f , g )				\
     a_me.line = __LINE__;				\
     ainit_child(1);					\
     ainit_child(2);					\
