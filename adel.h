@@ -1,6 +1,9 @@
 
 #include <stdint.h>
 
+#ifndef ADEL_V3
+#define ADEL_V3
+
 /** Adel multi-stack
  *
  * Stack of function states. Since Adel is emulating concurrency, the
@@ -21,18 +24,9 @@ class AdelStack
   // -- Current function (index into stack)
   static int current;
 
-  // -- Helper methods
+  // -- Helper method to initialize an activation record
+  //    for the first time (note: uses malloc)
   static void * init_ar(int index, int size_in_bytes)
-  {
-    void * ar = ars[index];
-    if (ar == 0) {
-      ar = malloc(size_in_bytes);
-      ars[index] = ar;
-    }
-    memset(ar, 0, size_in_bytes);
-    stack[index] = ar;
-    return ar;
-  }
 };
 
 /** adel status
@@ -42,7 +36,7 @@ class AdelStack
  */
 class adel
 public:
-  typedef enum { NONE, DONE, CONT } _status;
+  typedef enum { NONE, DONE, CONT, YIELD } _status;
   
 private:
   _status m_status;
@@ -55,6 +49,7 @@ public:
   
   bool done() const { return m_status == DONE; }
   bool cont() const { return m_status == CONT; }
+  bool yield() const { return m_status == YIELD; }
 };
 
 // ------------------------------------------------------------
@@ -73,6 +68,14 @@ public:
  *  Get a local variable from the activation record */
 #define my(v) (a_me->v)
 
+/** acall(res, c, f)
+ *
+ * Call an Adel function and capture the result status. */
+#define acall(res, c, f)			\
+  AdelStack::current = achild(c);		\
+  res = f;
+			   
+
 // ------------------------------------------------------------
 //   End-user macros
 
@@ -82,16 +85,16 @@ public:
  *  (and run all Adel functions below it).
  */
 #define aonce( f )				\
-  AdelStack::current = 0;				\
+  AdelStack::current = 0;			\
   f;
 
 /** aforever
  *
  *  Run the top adel function over and over.
  */
-#define aforever( f )					\
-  AdelStack::current = 0;					\
-  adel f_status = f;					\
+#define aforever( f )				\
+  AdelStack::current = 0;			\
+  adel f_status = f;				\
   if (f_status.done()) { ainit(0); }
 
 /** abegin
@@ -136,7 +139,7 @@ public:
     a_me.line = __LINE__;				\
     ainit_child(1);					\
   case ADEL_FINALLY:					\
-    adel_current = achild(1);				\
+    AdelStack::current = achild(1);				\
     f_status = f;					\
     if ( f_status.cont() ) return Adel::CONT;
 */
@@ -146,10 +149,10 @@ public:
  *  Semantics: delay this function for t milliseconds
  */
 #define adelay(t)					\
-  my(line) = __LINE__;					\
-  my(wait) = millis() + t;				\
+    my(line) = __LINE__;				\
+    my(wait) = millis() + t;				\
   case __LINE__:					\
-  if (millis() < my(wait)) return Adel::CONT;
+    if (millis() < my(wait)) return Adel::CONT;
 
 /** andthen
  *
@@ -159,11 +162,10 @@ public:
  *     andthen( turn_off_light() );
  */
 #define andthen( f )					\
-  my(line) = __LINE__;					\
+    my(line) = __LINE__;				\
     ainit(achild(1));					\
- case __LINE__:						\
-    adel_current = achild(1);				\
-    f_status = f;					\
+  case __LINE__:					\
+    acall(f_status, 1, f);				\
     if ( f_status.cont() ) return Adel::CONT;
 
 /** awaituntil
@@ -171,8 +173,8 @@ public:
  *  condition CANNOT be an adel function.
  */
 #define awaituntil( c )					\
-  my(line) = __LINE__;					\
- case __LINE__:						\
+    my(line) = __LINE__;				\
+  case __LINE__:					\
     if ( ! ( c ) ) return Adel::CONT
 
 /** aforatmost
@@ -180,11 +182,12 @@ public:
  *  Semantics: do f until it completes, or until the timeout
  */
 #define aforatmost( t, f )				\
-  my(line) = __LINE__;					\
-  my(wait) = millis() + t;				\
+    my(line) = __LINE__;				\
+    my(wait) = millis() + t;				\
   case __LINE__:					\
-    f_status = f;					\
-    if (f_status.cont() && millis() < my(wait)) return Adel::CONT;
+    acall(f_status, 1, f);				\
+    if (f_status.cont() && millis() < my(wait))		\
+      return Adel::CONT;
 
 /** aboth
  *
@@ -193,30 +196,26 @@ public:
  *      atogether( flash_led(), play_sound() );
  */
 #define aboth( f , g )					\
-  my(line) = __LINE__;					\
+    my(line) = __LINE__;				\
     ainit(achild(1));					\
     ainit(achild(2));					\
-  case __LINE__: {					\
-    adel_current = achild(1);				\
-    f_status = f;					\
-    adel_current = achild(2);				\
-    g_status = g;					\
+  case __LINE__: 					\
+    acall(f_status, 1, f);				\
+    acall(g_status, 2, g);				\
     if (f_status.cont() || g_status.cont())		\
-      return Adel::CONT;   }
+      return Adel::CONT;
 
 /** adountil
  *
  *  Semantics: execute f until g completes.
  */
 #define adountil( f , g )				\
-  my(line) = __LINE__;					\
+    my(line) = __LINE__;				\
     ainit(achild(1));					\
     ainit(achild(2));					\
   case __LINE__: 					\
-    adel_current = achild(1);				\
-    f_status = f;					\
-    adel_current = achild(2);				\
-    g_status = g;					\
+    acall(f_status, 1, f);				\
+    acall(g_status, 2, g);				\
     if (g_status.cont()) return Adel::CONT;
 
 /** auntileither
@@ -228,273 +227,59 @@ public:
  *  first function finished first or the second one did. Example use:
  *
  *     auntileither( button(), flash_led() ) { 
- *       // button finished first 
+ *        // button finished first 
  *     } else {
- *       // light finished first
+ *        // light finished first
  *     }
  */
 #define auntileither( f , g )				\
-  my(line) = __LINE__;					\
+    my(line) = __LINE__;				\
     ainit(achild(1));					\
     ainit(achild(2));					\
   case __LINE__: 					\
-    adel_current = achild(1);				\
-    f_status = f;					\
-    adel_current = achild(2);				\
-    g_status = g;					\
-    if (f_status.cont() && g_status.cont()) return Adel::CONT;	\
+    acall(f_status, 1, f);				\
+    acall(g_status, 2, g);				\
+    if (f_status.cont() && g_status.cont())		\
+      return Adel::CONT;				\
     if (f_status.done())
 
-/** areturn
+/** aforevery
+ * 
+ * Use in combination with ayield to form a traditional coroutine with a
+ * producer (the called function f) and a consumer (the code following the
+ * aforevery construct). Each time f yields, the code block is invoked.
+ *
+ *   aforevery( button(pin2) ) {
+ *      toggle_led(pin9);
+ *   }
+ *
+ */
+#define aforevery( f )					\
+    my(line) = __LINE__;				\
+    ainit(achild(1));					\
+    ainit(achild(2));					\
+  case __LINE__: 					\
+    acall(f_status, 1, f);				\
+    if (f_status.cont()) return Adel::CONT;		\
+    if ( ! f_status.done()) my(line) = __LINE__;	\
+    if ( f_status.yield() )
+
+/** ayield
+ *
+ * Yield to the calling function. Use in combination with 
+ */
+#define ayield				\
+    my(line) = __LINE__;		\
+    return Adel::YIELD;	 		\
+  case __LINE__:
+
+/** afinish
  * 
  *  Semantics: leave the function immediately, and communicate to the
  *  caller that it is done.
  */
-#define areturn				   \
-  my(line) = ADEL_FINALLY;		   \
-    return Adel::CONT;
-
-// ------------------------------------------------------------
-//  Version 2 of the library
-
-#ifdef ADEL_V2
-
-/** Adel state
- *
- * This class holds all the runtime information for a single function
- * invocation. The "line" is the current location in the function; the
- * "wait" is the time we're waiting for (in a delay); the "i" is 
- * a loop variable for use in afor. */
-class Astate
-{
-public:
-  uint16_t line;
-  uint16_t wait;
-  uint16_t i;
-  Astate() : line(0), wait(0), i(0) {}
-};
-
-/** Adel stack
- *  Stack of function states. Since Adel is emulating concurrency, the
- *  stack is not a linear data structure, but a tree of currently running
- *  functions. This implementation limits the tree to a binary tree, so
- *  that we can use a heap representation. This restriction means that we
- *  must use a fork-join model of parallelism. */
-
-#ifndef ADEL_DEPTH
-#define ADEL_DEPTH 5
-#endif
-
-extern Astate adel_stack[1 << MAX_DEPTH];
-
-/** Current function */
-extern uint16_t adel_current;
-
-/** Child function index
- * Using the heap structure, this is really fast. */
-#define achild(c) ((a_my_index << 1) + c)
-
-/** Start a new async function call */
-#define ainit_child(c) adel_stack[achild(c)].line = 0
-
-#define ADEL_FINALLY 99999
-
-/** adel status
- * 
- *  All Adel functions return an enum that indicates whether the routine is
- *  done or has more work to do.
- */
-class Adel
-{
-public:
-  typedef enum { NONE, DONE, CONT } _status;
-  
-private:
-  _status m_status;
-  
-public:
-  Adel(_status s) : m_status(s) {}
-  Adel() : m_status(NONE) {}
-  Adel(const Adel& other) : m_status(other.m_status) {}
-  explicit Adel(bool b) : m_status(NONE) {}
-  
-  bool done() const { return m_status == DONE; }
-  bool cont() const { return m_status == CONT; }
-};
-
-/** aonce
- *
- *  Use astart in the Arduino loop function to initiate the Adel function f
- *  (and run all Adel functions below it).
- */
-#define aonce( f )  \
-  adel_current = 0; \
-  f;
-
-/** aforever
- *
- *  Run the top adel function over and over.
- */
-#define aforever( f )					\
-  adel_current = 0;					\
-  Adel f_status = f;					\
-  if (f_status.done()) { adel_stack[0].line = 0; }
-
-/** abegin
- *
- * Always add abegin and aend to every adel function
- */
-#define abegin						\
-  Adel f_status, g_status;				\
-  int a_my_index = adel_current;			\
-  Astate& a_me = adel_stack[a_my_index];		\
-  switch (a_me.line) {					\
-  case 0:
-
-#define aend						\
-  case ADEL_FINALLY: ;					\
-  }							\
-  a_me.line = ADEL_FINALLY;				\
-  return Adel::DONE;
-
-/** afinally
- *
- *  Optionally, end with afinally to do some action whenever the function
- *  returns (for any reason)
- */
-#define afinally( f )					\
-    a_me.line = __LINE__;				\
-    ainit_child(1);					\
-  case ADEL_FINALLY:					\
-    adel_current = achild(1);				\
-    f_status = f;					\
-    if ( f_status.cont() ) return Adel::CONT;
-
-/** adelay
- *
- *  Semantics: delay this function for t milliseconds
- */
-#define adelay(t)					\
-    a_me.line = __LINE__;				\
-    a_me.wait = millis() + t;				\
-  case __LINE__:					\
-  if (millis() < a_me.wait) return Adel::CONT;
-
-/** andthen
- *
- *  Semantics: execute f synchronously, until it is done (returns false)
- *  Example use:
- *     andthen( turn_on_light() );
- *     andthen( turn_off_light() );
- */
-#define andthen( f )					\
-    a_me.line = __LINE__;				\
-    ainit_child(1);					\
- case __LINE__:						\
-    adel_current = achild(1);				\
-    f_status = f;					\
-    if ( f_status.cont() ) return Adel::CONT;
-
-/** awaituntil
- *  Wait asynchronously for a condition to become true. Note that this
- *  condition CANNOT be an adel function.
- */
-#define awaituntil( c )					\
-    a_me.line = __LINE__;				\
- case __LINE__:						\
-    if ( ! ( c ) ) return Adel::CONT
-
-/** aforatmost
- *
- *  Semantics: do f until it completes, or until the timeout
- */
-#define aforatmost( t, f )				\
-    a_me.line = __LINE__;				\
-    a_me.wait = millis() + t;				\
-  case __LINE__:					\
-    f_status = f;					\
-    if (f_status.cont() && millis() < a_me.wait) return Adel::CONT;
-
-/** aboth
- *
- *  Semantics: execute f and g asynchronously, until *both* are done
- *  (both return false). Example use:
- *      atogether( flash_led(), play_sound() );
- */
-#define aboth( f , g )					\
-    a_me.line = __LINE__;				\
-    ainit_child(1);					\
-    ainit_child(2);					\
-  case __LINE__: {					\
-    adel_current = achild(1);				\
-    f_status = f;					\
-    adel_current = achild(2);				\
-    g_status = g;					\
-    if (f_status.cont() || g_status.cont())		\
-      return Adel::CONT;   }
-
-/** adountil
- *
- *  Semantics: execute f until g completes.
- */
-#define adountil( f , g )				\
-    a_me.line = __LINE__;				\
-    ainit_child(1);					\
-    ainit_child(2);					\
-  case __LINE__: 					\
-    adel_current = achild(1);				\
-    f_status = f;					\
-    adel_current = achild(2);				\
-    g_status = g;					\
-    if (g_status.cont()) return Adel::CONT;
-
-/** auntileither
- *
- *  Semantics: execute c and f asynchronously until either one of them
- *  finishes (contrast with aboth). This construct behaves like a
- *  conditional statement: it should be followed by a true statement and
- *  optional false statement, which are executed depending on whether the
- *  first function finished first or the second one did. Example use:
- *
- *     auntileither( button(), flash_led() ) { 
- *       // button finished first 
- *     } else {
- *       // light finished first
- *     }
- */
-#define auntileither( f , g )				\
-    a_me.line = __LINE__;				\
-    ainit_child(1);					\
-    ainit_child(2);					\
-  case __LINE__: 					\
-    adel_current = achild(1);				\
-    f_status = f;					\
-    adel_current = achild(2);				\
-    g_status = g;					\
-    if (f_status.cont() && g_status.cont()) return Adel::CONT;	\
-    if (f_status.done())
-
-/** afor_i
- * 
- * Adel-friendly for loop. The issue is that the Adel execution model makes
- * it hard to have local variables, like the loop control variable. This
- * version of a for loop is more like a Fortran for loop: it just gives you
- * a variables that ranges over sequence of values. The name of the loop
- * variable is baked into it.
- */
-#define afor_i( start, end, step )			\
-    a_me.line = __LINE__;				\
-    a_me.i = start;					\
-  case __LINE__:					\
-    for (int i = a_me.i; i <= end; a_me.i = (i = (i + step)))
-
-/** areturn
- * 
- *  Semantics: leave the function immediately, and communicate to the
- *  caller that it is done.
- */
-#define areturn				   \
-    a_me.line = ADEL_FINALLY;		   \
+#define afinish				   \
+    my(line) = ADEL_FINALLY;		   \
     return Adel::CONT;
 
 #endif
