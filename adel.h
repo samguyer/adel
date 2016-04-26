@@ -129,15 +129,16 @@ public:
  * after abegin.
  */
 #define abegin						\
-  int a_my_index = myRuntime.current;			\
-  struct LocalAdelAR : public AdelAR {			\
+  struct LocalAdelAR : public AdelAR {
 
-/** afirst:
+/** asteps:
  * 
- * Use afirst: to mark the first statement of the Adel function.
+ * Use asteps: to mark the starting point
  */
-#define afirst								\
-  } * a_me = (LocalAdelAR *) myRuntime.stack[a_my_index];			\
+#define asteps								\
+  };									\
+  int a_my_index = myRuntime.current;					\
+  LocalAdelAR * a_me = (LocalAdelAR *) myRuntime.stack[a_my_index];	\
   if (a_me == 0)							\
     a_me = (LocalAdelAR *) myRuntime.init_ar(a_my_index, sizeof(LocalAdelAR));	\
   adel f_status, g_status;						\
