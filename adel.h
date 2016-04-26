@@ -4,7 +4,7 @@
 #ifndef ADEL_V3
 #define ADEL_V3
 
-/** Adel multi-stack
+/** Adel runtime
  *
  * Stack of function states. Since Adel is emulating concurrency, the
  *  stack is not a linear data structure, but a tree of currently running
@@ -12,21 +12,40 @@
  *  that we can use a heap representation. This restriction means that we
  *  must use a fork-join model of parallelism. */
 
-template<int stack_depth>
-class AdelStack
+struct AdelAR
 {
+  uint16_t line;
+  uint16_t wait;
+};
+
+#define ADEL_FINALLY 0xFFFF
+
+template<int stack_depth>
+class AdelRuntime
+{
+public:
   // -- Stack: pointers to activation records indexed by "current"
-  static void * stack[1 << stack_depth];
+  AdelAR * stack[1 << stack_depth];
 
   // -- Activation records: mirrors stack, but saves the pointers
-  static void * ars[1 << stack_depth];
+  AdelAR * ars[1 << stack_depth];
 
   // -- Current function (index into stack)
-  static int current;
+  int current;
 
   // -- Helper method to initialize an activation record
   //    for the first time (note: uses malloc)
-  static void * init_ar(int index, int size_in_bytes)
+  AdelAR * init_ar(int index, int size_in_bytes)
+  {
+    AdelAR * ar = ars[index];
+    if (ar == 0) {
+      ar = (AdelAR *) malloc(size_in_bytes);
+      ars[index] = ar;
+    }
+    memset(ar, 0, size_in_bytes);
+    stack[index] = ar;
+    return ar;
+  }
 };
 
 /** adel status
@@ -35,6 +54,7 @@ class AdelStack
  *  done or has more work to do.
  */
 class adel
+{
 public:
   typedef enum { NONE, DONE, CONT, YIELD } _status;
   
@@ -61,7 +81,7 @@ public:
 
 /** Initialize
  */
-#define ainit(c) (AdelStack::stack[c]->line = 0)
+#define ainit(c) (myRuntime.stack[c]->line = 0)
 
 /** my(v)
  *
@@ -72,12 +92,17 @@ public:
  *
  * Call an Adel function and capture the result status. */
 #define acall(res, c, f)			\
-  AdelStack::current = achild(c);		\
+  myRuntime.current = achild(c);		\
   res = f;
-			   
 
 // ------------------------------------------------------------
 //   End-user macros
+
+/** adel_setup(N)
+ *
+ * Set up the Adel runtime with a stack depth of N
+ */
+#define adel_setup(N) AdelRuntime<N> myRuntime;
 
 /** aonce
  *
@@ -85,7 +110,7 @@ public:
  *  (and run all Adel functions below it).
  */
 #define aonce( f )				\
-  AdelStack::current = 0;			\
+  myRuntime.current = 0;			\
   f;
 
 /** aforever
@@ -93,7 +118,7 @@ public:
  *  Run the top adel function over and over.
  */
 #define aforever( f )				\
-  AdelStack::current = 0;			\
+  myRuntime.current = 0;			\
   adel f_status = f;				\
   if (f_status.done()) { ainit(0); }
 
@@ -103,20 +128,18 @@ public:
  * that need to persist in this function should be declared immediately
  * after abegin.
  */
-#define abegin					\
-  int a_my_index = AdelStack::current;		\
-  struct _adel_ar { 
+#define abegin						\
+  int a_my_index = myRuntime.current;			\
+  struct LocalAdelAR : public AdelAR {			\
 
 /** afirst:
  * 
  * Use afirst: to mark the first statement of the Adel function.
  */
 #define afirst								\
-    uint16_t line;							\
-    uint16_t wait;							\
-  } * a_me = (_adel_ar *) AdelStack::stack[a_my_index];			\
+  } * a_me = (LocalAdelAR *) myRuntime.stack[a_my_index];			\
   if (a_me == 0)							\
-    a_me = (_adel_ar *) AdelStack::init_ar(a_my_index, sizeof(_adel_ar));	\
+    a_me = (LocalAdelAR *) myRuntime.init_ar(a_my_index, sizeof(LocalAdelAR));	\
   adel f_status, g_status;						\
   switch (my(line)) {							\
   case 0
@@ -126,10 +149,10 @@ public:
  * Must be the last thing in the Adel function.
  */
 #define aend						\
-  case ADEL_FINALLY: ;					\
+  default: ;						\
   }							\
   my(line) = ADEL_FINALLY;				\
-  return Adel::DONE;
+  return adel::DONE;
 
 /** afinally
  *
@@ -139,9 +162,9 @@ public:
     a_me.line = __LINE__;				\
     ainit_child(1);					\
   case ADEL_FINALLY:					\
-    AdelStack::current = achild(1);				\
+    myRuntime.current = achild(1);				\
     f_status = f;					\
-    if ( f_status.cont() ) return Adel::CONT;
+    if ( f_status.cont() ) return adel::CONT;
 */
 
 /** adelay
@@ -152,7 +175,7 @@ public:
     my(line) = __LINE__;				\
     my(wait) = millis() + t;				\
   case __LINE__:					\
-    if (millis() < my(wait)) return Adel::CONT;
+    if (millis() < my(wait)) return adel::CONT;
 
 /** andthen
  *
@@ -166,7 +189,7 @@ public:
     ainit(achild(1));					\
   case __LINE__:					\
     acall(f_status, 1, f);				\
-    if ( f_status.cont() ) return Adel::CONT;
+    if ( f_status.cont() ) return adel::CONT;
 
 /** awaituntil
  *  Wait asynchronously for a condition to become true. Note that this
@@ -175,7 +198,7 @@ public:
 #define awaituntil( c )					\
     my(line) = __LINE__;				\
   case __LINE__:					\
-    if ( ! ( c ) ) return Adel::CONT
+    if ( ! ( c ) ) return adel::CONT
 
 /** aforatmost
  *
@@ -187,7 +210,7 @@ public:
   case __LINE__:					\
     acall(f_status, 1, f);				\
     if (f_status.cont() && millis() < my(wait))		\
-      return Adel::CONT;
+      return adel::CONT;
 
 /** aboth
  *
@@ -203,7 +226,7 @@ public:
     acall(f_status, 1, f);				\
     acall(g_status, 2, g);				\
     if (f_status.cont() || g_status.cont())		\
-      return Adel::CONT;
+      return adel::CONT;
 
 /** adountil
  *
@@ -216,7 +239,7 @@ public:
   case __LINE__: 					\
     acall(f_status, 1, f);				\
     acall(g_status, 2, g);				\
-    if (g_status.cont()) return Adel::CONT;
+    if (g_status.cont()) return adel::CONT;
 
 /** auntileither
  *
@@ -240,7 +263,7 @@ public:
     acall(f_status, 1, f);				\
     acall(g_status, 2, g);				\
     if (f_status.cont() && g_status.cont())		\
-      return Adel::CONT;				\
+      return adel::CONT;				\
     if (f_status.done())
 
 /** aforevery
@@ -260,7 +283,7 @@ public:
     ainit(achild(2));					\
   case __LINE__: 					\
     acall(f_status, 1, f);				\
-    if (f_status.cont()) return Adel::CONT;		\
+    if (f_status.cont()) return adel::CONT;		\
     if ( ! f_status.done()) my(line) = __LINE__;	\
     if ( f_status.yield() )
 
@@ -270,7 +293,7 @@ public:
  */
 #define ayield				\
     my(line) = __LINE__;		\
-    return Adel::YIELD;	 		\
+    return adel::YIELD;	 		\
   case __LINE__:
 
 /** afinish
@@ -280,6 +303,6 @@ public:
  */
 #define afinish				   \
     my(line) = ADEL_FINALLY;		   \
-    return Adel::CONT;
+    return adel::CONT;
 
 #endif
