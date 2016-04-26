@@ -128,13 +128,16 @@ One of the challenges in Adel is supporting local variables. From the standpoint
       abegin;
         int i;
       asteps:
+        for (my(i) = 0; my(i) < 100; my(i)++) {
+          digitalWrite(pin, my(i));
+          adelay(100);
+        }
       aend;
     }
-
 
 
 ## WARNINGS
 
 (1) Be very careful using `switch` and `break` inside Adel functions. The co-routine implementation encloses all function bodies in a giant switch statement to allow them to be reentrant. Adding other switch and break statements can have unpredictable results.
 
-(2) The internal stack that keeps track of concurrent functions has a limited depth -- currently hard-wired to 6. Going beyond six levels deep will cause an array overflow.
+(2) The internal stack that keeps track of concurrent functions has a limited depth determined at compile time. Going beyond six levels deep will cause an array overflow.
