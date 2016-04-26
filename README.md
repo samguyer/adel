@@ -51,7 +51,7 @@ Concurrency in Adel is specified at the function granularity, using a fork-join 
 * `aforatmost( T, f )` : run Adel function f until it completes, or T milliseconds (whichever comes first)
 * `aboth( f , g )` : run Adel functions f and g concurrently until they **both** finish.
 * `adountil( f , g )` : run Adel function f until g finishes
-* `auntileither( f , g ) { ... } else { ... }` : run Adel functions f and g concurrently until **one** of them finishes. Executes the true branch if f finishes first or the false branch if g finishes first.
+* `auntileither( f , g ) { ... } else { ... }` : run Adel functions `f` and `g` concurrently until **one** of them finishes. Executes the true branch if `f` finishes first or the false branch if `g` finishes first.
 * `afinish` : finish executing the current function
 * `ayield` : pause this function and return to the caller (see aforevery)
 * `aforevery( f ) { ... }` : run f continuously, and execute the code in the block each time it yields.
@@ -87,15 +87,35 @@ This code does exactly what we want: it blinks the two lights at different inter
     adel button_or_timeout() {
       abegin;
       asteps:
-      auntileither( button(9), timeout(2000) ) {
-        // -- Button was pushed (button() finished fist)
-      } else {
+      auntileither( timeout(2000) , button(9) ) {
         // -- Timeout finished first
+      } else {
+        // -- Button was pushed (button() finished fist)
       }
       aend;
     }
 
-Notice that the `auntileither` macro is set up to look like a control structure, which allows it to have arbitrary code for handling to two cases (which routine finished first).
+Notice that the `auntileither` macro is set up to look like a control structure, which allows it to have arbitrary code for handling to two cases (which routine finished first). Since timeouts are such a common case there is a single macro that encapulates the time limit:
+
+    adel button_or_timeout() {
+      abegin;
+      asteps:
+      aforatmost( 2000, button(9)) {
+        // -- Timeout occured, do something
+      } else {
+        // -- Buttion finished, do something else
+      }
+      aend;
+    }
+
+If we don't care which one finishes first, we can just end with a semicolon:
+
+    adel blink_for(int how_long) {
+      abegin;
+      asteps:
+      aforatmost( how_long, blink(4, 300));
+      aend;
+    }
 
 Here is the `button()` function, which returns if the user pushes a button:
 
@@ -115,6 +135,39 @@ Here is the `button()` function, which returns if the user pushes a button:
         while (digitalRead(pin) != LOW) {
           adelay(20);
         }
+      }
+      aend;
+    }
+
+## Yield and forevery
+
+Classic coroutines allow a function to yield to its caller **without** losing track of where it is currently executing. Subsequent entry to the function simple continues where it left off. The problem with this approach is that it requires an explicit "init" to start the function. Instead, Adel limits this behavior for a "forevery" construct in the caller, which is simpler to understand. 
+
+Here is a contrived pair of functions that blinks an LED according to the patterns of prime numbers:
+
+    adel get_prime()
+    {
+      abegin;
+      int cur;
+      asteps:
+      my(cur) = 0;
+      while (my(cur) < 10000) {
+        adelay(50);
+        my(cur)++;
+        if (isprime(my(cur)) ayield;
+      }
+      aend;
+    }
+    
+    adel blink_primes()
+    {
+      abegin;
+      asteps:
+      aforevery( get_prime() ) {
+        digitalWrite(pin, HIGH);
+        adelay(500);
+        digitalWrite(pin, LOW);
+        adelay(500);
       }
       aend;
     }
