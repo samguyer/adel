@@ -148,7 +148,7 @@ Here is a contrived pair of functions that blinks an LED according to the patter
     adel get_prime()
     {
       abegin;
-      int cur;
+        int cur;
       asteps:
       my(cur) = 0;
       while (my(cur) < 10000) {
