@@ -281,22 +281,22 @@ public:
 /** aforevery
  * 
  *  Use in combination with ayield to form a traditional coroutine with a
- *  producer (function f) and a consumer (function g). Each time f yields,
- *  function g is called.
+ *  producer (function f) and a consumer (code block). Each time f yields,
+ *  the code block is executed.
  *
- *   aforevery( button(pin2), brighten(pin3) );
+ *   aforevery( button(pin2) ) {
+ *      brighten(pin3);
+ *      acontinue;
+ *   }
  *
  */
-#define aforevery( f , g )				\
+#define aforevery( f )					\
     my(line) = __LINE__;				\
     ainit(achild(1));					\
-    ainit(achild(2));					\
   case __LINE__: 					\
     acall(f_status, 1, f);				\
     if (f_status.cont()) return adel::CONT;		\
-    if ( f_status.yield() ) {				\
-      acall(g_status, 2, g);				\
-      return adel::CONT; }
+    if ( f_status.yield() )
 
 /** ayield
  *
@@ -306,6 +306,12 @@ public:
     my(line) = __LINE__;		\
     return adel::YIELD;	 		\
   case __LINE__:
+
+/** acontinue
+ *
+ * Use inside a forevery block to continue calling the producer function.
+ */
+#define acontinue return adel::CONT
 
 /** afinish
  * 
