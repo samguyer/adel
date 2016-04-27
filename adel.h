@@ -1,5 +1,7 @@
 
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 #ifndef ADEL_V3
 #define ADEL_V3
@@ -214,6 +216,7 @@ public:
  */
 #define aforatmost( t, f )				\
     my(line) = __LINE__;				\
+    ainit(achild(1));					\
     my(wait) = millis() + t;				\
   case __LINE__:					\
     acall(f_status, 1, f);				\
@@ -277,24 +280,23 @@ public:
 
 /** aforevery
  * 
- * Use in combination with ayield to form a traditional coroutine with a
- * producer (the called function f) and a consumer (the code following the
- * aforevery construct). Each time f yields, the code block is invoked.
+ *  Use in combination with ayield to form a traditional coroutine with a
+ *  producer (function f) and a consumer (function g). Each time f yields,
+ *  function g is called.
  *
- *   aforevery( button(pin2) ) {
- *      toggle_led(pin9);
- *   }
+ *   aforevery( button(pin2), brighten(pin3) );
  *
  */
-#define aforevery( f )					\
+#define aforevery( f , g )				\
     my(line) = __LINE__;				\
     ainit(achild(1));					\
     ainit(achild(2));					\
   case __LINE__: 					\
     acall(f_status, 1, f);				\
     if (f_status.cont()) return adel::CONT;		\
-    if ( ! f_status.done()) my(line) = __LINE__;	\
-    if ( f_status.yield() )
+    if ( f_status.yield() ) {				\
+      acall(g_status, 2, g);				\
+      return adel::CONT; }
 
 /** ayield
  *
