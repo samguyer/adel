@@ -203,7 +203,14 @@ public:
 
 /** aforatmost
  *
- *  Semantics: do f until it completes, or until the timeout
+ *  Semantics: do f until it completes, or until the timeout. The structure
+ *  is set up so that it can be used as a control structure to test whether
+ *  or not the timeout was reached: any code placed after the aforatmost is
+ *  executed only when the timeout interrupts the function.
+ *
+ *    aforatmost( 100, f ) {
+ *        // -- Timed out -- do something
+ *    }
  */
 #define aforatmost( t, f )				\
     my(line) = __LINE__;				\
@@ -211,7 +218,8 @@ public:
   case __LINE__:					\
     acall(f_status, 1, f);				\
     if (f_status.cont() && millis() < my(wait))		\
-      return adel::CONT;
+      return adel::CONT;				\
+    if ( ! f_status.done())
 
 /** aboth
  *
