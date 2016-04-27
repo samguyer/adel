@@ -1,4 +1,3 @@
-
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -281,22 +280,24 @@ public:
 /** aforevery
  * 
  *  Use in combination with ayield to form a traditional coroutine with a
- *  producer (function f) and a consumer (code block). Each time f yields,
- *  the code block is executed.
+ *  producer (function f) and a consumer (function g). Each time f yields,
+ *  g is executed.
  *
- *   aforevery( button(pin2) ) {
- *      brighten(pin3);
- *      acontinue;
- *   }
+ *   aforevery( button(pin2), brighten(pin3) );
  *
  */
-#define aforevery( f )					\
+#define aforevery( f , g )				\
     my(line) = __LINE__;				\
     ainit(achild(1));					\
+    ainit(achild(2));					\
   case __LINE__: 					\
     acall(f_status, 1, f);				\
     if (f_status.cont()) return adel::CONT;		\
-    if ( f_status.yield() )
+    if (f_status.yield()) {				\
+      acall(g_status, 2, g);				\
+      my(line) = __LINE__;				\
+      return adel::CONT;				\
+    }
 
 /** ayield
  *
