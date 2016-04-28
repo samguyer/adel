@@ -312,14 +312,28 @@ public:
     ainit(achild(1));							\
     ainit(achild(2));							\
     adel_debug("aforevery", a_my_index, __FUNCTION__, __LINE__);	\
+    my(wait) = 0;							\
   case __LINE__:							\
+  if (my(wait) == 0) {							\
     acall(f_status, 1, f);						\
     if (f_status.cont()) return adel::CONT;				\
     if (f_status.yield()) {						\
-      acall(g_status, 2, g);						\
-      my(line) = __LINE__;						\
+      my(wait) = 1;							\
       return adel::CONT;						\
-    }
+    }									\
+  } else { 								\ 
+    acall(g_status, 2, g);						\
+    if (g_status.cont()) return adel::CONT;				\
+    if (g_status.yield()) {						\
+      my(wait) = 0;							\
+      return adel::CONT;						\
+    }									\
+    if (g_status.done()) {						\
+      ainit(achild(2));							\
+      my(wait) = 0;							\
+      return adel::CONT;						\
+    }									\
+  }
 
 /** ayield
  *
