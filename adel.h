@@ -29,9 +29,6 @@ public:
   // -- Stack: pointers to activation records indexed by "current"
   AdelAR * stack[1 << stack_depth];
 
-  // -- Activation records: mirrors stack, but saves the pointers
-  AdelAR * ars[1 << stack_depth];
-
   // -- Current function (index into stack)
   int current;
 
@@ -40,7 +37,6 @@ public:
   {
     for (int i = 0; i < (1 << stack_depth); i++) {
       stack[i] = 0;
-      ars[i] = 0;
     }
   }
     
@@ -48,11 +44,7 @@ public:
   //    for the first time (note: uses malloc)
   AdelAR * init_ar(int index, int size_in_bytes)
   {
-    AdelAR * ar = ars[index];
-    if (ar == 0) {
-      ar = (AdelAR *) malloc(size_in_bytes);
-      ars[index] = ar;
-    }
+    AdelAR * ar = (AdelAR *) malloc(size_in_bytes);
     ar->line = 0;
     ar->wait = 0;
     stack[index] = ar;
@@ -93,7 +85,7 @@ public:
 
 /** Initialize
  */
-#define ainit(c) (myRuntime.stack[c]->line = 0)
+#define ainit(c) { AdelAR * ar = myRuntime.stack[c]; if (ar) ar->line = 0; }
 
 /** my(v)
  *
@@ -153,8 +145,7 @@ public:
  * that need to persist in this function should be declared immediately
  * after abegin.
  */
-#define abegin						\
-  struct LocalAdelAR : public AdelAR {
+#define abegin	struct LocalAdelAR : public AdelAR {
 
 /** asteps:
  * 
@@ -179,9 +170,7 @@ public:
 #define aend								\
   case ADEL_FINALLY: ;							\
   }									\
-  my(line) = 0;								\
   adel_debug("aend", a_my_index, __FUNCTION__, __LINE__);		\
-  myRuntime.stack[a_my_index] = 0;					\
   return adel::DONE;
 
 /** adelay
@@ -194,17 +183,17 @@ public:
  case __LINE__:								\
     if (millis() < my(wait)) return adel::CONT;
 
-/** andthen
+/** ado
  *
  *  Semantics: execute f synchronously, until it is done (returns false)
  *  Example use:
- *     andthen( turn_on_light() );
- *     andthen( turn_off_light() );
+ *     ado( turn_on_light() );
+ *     ado( turn_off_light() );
  */
-#define andthen( f )						\
+#define ado( f )						\
     my(line) = __LINE__;					\
     ainit(achild(1));						\
-    adel_debug("andthen", a_my_index, __FUNCTION__, __LINE__);	\
+    adel_debug("ado", a_my_index, __FUNCTION__, __LINE__);	\
   case __LINE__:						\
     acall(f_status, 1, f);					\
     if ( f_status.cont() ) return adel::CONT;
@@ -241,13 +230,13 @@ public:
       return adel::CONT;				\
     if ( ! f_status.done())
 
-/** aboth
+/** atogether
  *
  *  Semantics: execute f and g asynchronously, until *both* are done
  *  (both return false). Example use:
  *      atogether( flash_led(), play_sound() );
  */
-#define aboth( f , g )						\
+#define atogether( f , g )					\
     my(line) = __LINE__;					\
     ainit(achild(1));						\
     ainit(achild(2));						\
@@ -258,11 +247,11 @@ public:
    if (f_status.cont() || g_status.cont())			\
       return adel::CONT;
 
-/** adountil
+/** auntil
  *
- *  Semantics: execute f until g completes.
+ *  Semantics: execute g until f completes.
  */
-#define adountil( f , g )						\
+#define auntil( f , g )							\
     my(line) = __LINE__;						\
     ainit(achild(1));							\
     ainit(achild(2));							\
@@ -270,7 +259,7 @@ public:
   case __LINE__:							\
     acall(f_status, 1, f);						\
     acall(g_status, 2, g);						\
-    if (g_status.cont()) return adel::CONT;
+    if (f_status.cont()) return adel::CONT;
 
 /** auntileither
  *
