@@ -46,15 +46,16 @@ The central problem is the `delay()` function, which makes timing easy for indiv
 
 Concurrency in Adel is specified at the function granularity, using a fork-join style of parallelism. Functions are designated as "Adel functions" by defining them in a stylized way. The body of the function can use any of the Adel library routines shown below:
 
-* `adelay( T )` : asynchronously delay this function for T milliseconds.
-* `andthen( f )` : run Adel function f to completion before continuing.
-* `aforatmost( T, f )` : run Adel function f until it completes, or T milliseconds (whichever comes first)
-* `aboth( f , g )` : run Adel functions f and g concurrently until they **both** finish.
-* `adountil( f , g )` : run Adel function f until g finishes
+* `adelay( T )` : asynchronously delay the current function for T milliseconds.
+* `ado( f )` : run Adel function `f` to completion before continuing.
+* `awaituntil( c )` : wait asynchronously until condition `c` is true (`c` must not be an Adel function).
+* `aforatmost( T, f )` : run Adel function `f` until it completes, or T milliseconds (whichever comes first)
+* `atogether( f , g )` : run Adel functions `f` and `g` concurrently until they **both** finish.
+* `auntil( f , g )` : run Adel function `g` until `f` completes.
 * `auntileither( f , g ) { ... } else { ... }` : run Adel functions `f` and `g` concurrently until **one** of them finishes. Executes the true branch if `f` finishes first or the false branch if `g` finishes first.
-* `afinish` : finish executing the current function
-* `ayield` : pause this function and return to the caller (see aforevery)
-* `aforevery( f ) { ... }` : run f continuously, and execute the code in the block each time it yields.
+* `afinish` : finish executing the current function (like a return)
+* `aforevery( f ) { ... }` : run `f` continuously until it yields; then run `g` until it yields. Continue back and forth until `f` completes.
+* `ayield` : pause this function and switch to the other function (see aforevery)
 
 Using these routines we can rewrite the blink routine:
 
@@ -73,9 +74,13 @@ Using these routines we can rewrite the blink routine:
 
 Every Adel function contains a minimum of three things: return type `adel`, and macros `abegin`, `asteps:`, and `aend` at the begining and end of the function. But otherwise, the code is almost identical. The key feature is that we can run blink concurrently, like this:
 
-    aboth( blink(3, 500), blink(4, 500) );
+    atogether( blink(3, 500), blink(4, 500) );
 
-This code does exactly what we want: it blinks the two lights at different intervals at the same time. We can aluse the `auntileither` macro to call two routines and check which one finished first. This macro is useful for things like timeouts:
+This code does exactly what we want: it blinks the two lights at different intervals at the same time. The `atogether` macro waits until both functions are complete, which is not always desirable. For example, we might want to blink a light until a button is pressed. Assuming we have a `button` function (shown later), we can use the `auntil` construct:
+
+    auntil( button(pin), blink(3, 350) );
+
+The same construct could be use to implement a timeout by defining a function that simply delays for a specified amount of time:
 
     adel timeout(int ms) {
       abegin;
@@ -83,94 +88,53 @@ This code does exactly what we want: it blinks the two lights at different inter
       adelay(ms);
       aend;
     }
-    
-    adel button_or_timeout() {
-      abegin;
-      asteps:
-      auntileither( timeout(2000) , button(9) ) {
-        // -- Timeout finished first
-      } else {
-        // -- Button was pushed (button() finished fist)
-      }
-      aend;
+
+To blink for 2 seconds we write:
+
+    auntil( timeout(2000), blink(3, 350) );
+
+Timeouts are so common, though, that Adel supports this construct directly, without having to define a separate function:
+
+    aforatmost( 2000, blink(3, 350) );
+
+One special feature of `aforatmost` is that it behaves like a conditional, where the true branch is executed only when the timeout occurs first:
+
+    aforatmost( 2000, blink(3, 350) ) {
+        // -- Timeout happened before blinking finished
     }
 
-Notice that the `auntileither` macro is set up to look like a control structure, which allows it to have arbitrary code for handling to two cases (which routine finished first). Since timeouts are such a common case there is a single macro that encapulates the time limit:
+The `auntil` construct has a similar analogue called `auntileither`, which executes two functions concurrently (like `atogether`), but stops when **either** one finishes. The true branch is executed if the first one finishes first; the false branch is executed if the second one finishes first:
 
-    adel button_or_timeout() {
-      abegin;
-      asteps:
-      aforatmost( 2000, button(9)) {
-        // -- Timeout occured, do something
-      } else {
-        // -- Buttion finished, do something else
-      }
-      aend;
+    auntileither( button(pin), blink(3, 350) ) {
+        // -- User hit the button
+    } else {
+        // -- blink completed
     }
 
-If we don't care which one finishes first, we can just end with a semicolon:
-
-    adel blink_for(int how_long) {
-      abegin;
-      asteps:
-      aforatmost( how_long, blink(4, 300));
-      aend;
-    }
-
-Here is the `button()` function, which returns if the user pushes a button:
+Here is the `button()` function, which returns when the user presses the button. It uses the `awaituntil` construct to wait for the pin to go high or low:
 
     adel button(int pin)
     {
       abegin;
       asteps:
-      // -- Wait for a high signal
-      while (digitalRead(pin) != HIGH) {
-        adelay(20);
-      }
-      
-      // -- Wait 50ms and then check again
-      adelay(50);
-      if (digitalRead(pin) == HIGH) {
-        // -- Still pressed, wait until it is released
-        while (digitalRead(pin) != LOW) {
-          adelay(20);
+        while ( 1 ) {
+          awaituntil (digitalRead(pin) == HIGH);
+          adelay (50);
+          if (digitalRead(pin) == HIGH) {
+            adelay(200);
+            awaituntil (digitalRead(pin) == LOW);
+            afinish;
+          }
         }
-      }
       aend;
     }
+
 
 ## Yield and forevery
 
 Classic coroutines allow a function to yield to its caller **without** losing track of where it is currently executing. Subsequent entry to the function simple continues where it left off. The problem with this approach is that it requires an explicit "init" to start the function. Instead, Adel limits this behavior for a "forevery" construct in the caller, which is simpler to understand. 
 
-Here is a contrived pair of functions that blinks an LED according to the patterns of prime numbers:
-
-    adel get_prime()
-    {
-      abegin;
-        int cur;
-      asteps:
-      my(cur) = 0;
-      while (my(cur) < 10000) {
-        adelay(50);
-        my(cur)++;
-        if (isprime(my(cur)) ayield;
-      }
-      aend;
-    }
-    
-    adel blink_primes()
-    {
-      abegin;
-      asteps:
-      aforevery( get_prime() ) {
-        digitalWrite(pin, HIGH);
-        adelay(500);
-        digitalWrite(pin, LOW);
-        adelay(500);
-      }
-      aend;
-    }
+**TBD**
 
 ## Local variables
 
@@ -193,4 +157,7 @@ One of the challenges in Adel is supporting local variables. From the standpoint
 
 (1) Be very careful using `switch` and `break` inside Adel functions. The co-routine implementation encloses all function bodies in a giant switch statement to allow them to be reentrant. Adding other switch and break statements can have unpredictable results.
 
-(2) The internal stack that keeps track of concurrent functions has a limited depth determined at compile time. Going beyond six levels deep will cause an array overflow.
+(2) The internal stack that keeps track of concurrent functions has a limited depth determined at compile time. The number of levels must be specified in the `adel_init` macro -- 4 or 5 is a good number for most applications.
+
+(3) Loops, like `for` and `while`, are perfectly fine to use inside Adel functions, but make sure that there is at least one Adel function (like `adelay`) in the body, so that the loop does not stall the rest of the program.
+
