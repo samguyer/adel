@@ -8,7 +8,7 @@
 
 /** Adel runtime
  *
- * Stack of function states. Since Adel is emulating concurrency, the
+ *  Stack of function states. Since Adel is emulating concurrency, the
  *  stack is not a linear data structure, but a tree of currently running
  *  functions. This implementation limits the tree to a binary tree, so
  *  that we can use a heap representation. This restriction means that we
@@ -44,9 +44,7 @@ public:
   //    for the first time (note: uses malloc)
   AdelAR * init_ar(int index, int size_in_bytes)
   {
-    AdelAR * ar = (AdelAR *) malloc(size_in_bytes);
-    ar->line = 0;
-    ar->wait = 0;
+    AdelAR * ar = (AdelAR *) calloc(size_in_bytes);
     stack[index] = ar;
     return ar;
   }
@@ -180,6 +178,7 @@ public:
 #define adelay(t)							\
     my(line) = __LINE__;						\
     my(wait) = millis() + t;						\
+    adel_debug("adelay", a_my_index, __FUNCTION__, __LINE__);		\
  case __LINE__:								\
     if (millis() < my(wait)) return adel::CONT;
 
@@ -287,20 +286,19 @@ public:
       return adel::CONT;						\
     if (f_status.done())
 
-/** aforevery
+/** alternate
  * 
- *  Use in combination with ayield to form a traditional coroutine with a
- *  producer (function f) and a consumer (function g). Each time f yields,
- *  g is executed.
- *
- *   aforevery( button(pin2), brighten(pin3) );
+ *  Execute the first function until it calls "ayourturn". Then start
+ *  executing the second function until *it* calls "ayourturn", at which
+ *  point continue executing the first one where it left off. Continue
+ *  until either one finishes.
  *
  */
-#define aforevery( f , g )						\
+#define alternate( f , g )						\
     my(line) = __LINE__;						\
     ainit(achild(1));							\
     ainit(achild(2));							\
-    adel_debug("aforevery", a_my_index, __FUNCTION__, __LINE__);	\
+    adel_debug("alternate", a_my_index, __FUNCTION__, __LINE__);	\
     my(wait) = 0;							\
   case __LINE__:							\
   if (my(wait) == 0) {							\
@@ -324,13 +322,14 @@ public:
     }									\
   }
 
-/** ayield
+/** ayourturn
  *
- * Yield to the calling function. Use in combination with 
+ *  Use only in functions being called by "alternate". Stop executing this
+ *  function and start executing the other function.
  */
-#define ayield							\
+#define ayourturn							\
     my(line) = __LINE__;					\
-    adel_debug("ayield", a_my_index, __FUNCTION__, __LINE__);	\
+    adel_debug("ayourturn", a_my_index, __FUNCTION__, __LINE__);	\
     return adel::YIELD;						\
   case __LINE__: ;
 
