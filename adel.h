@@ -20,10 +20,16 @@
 #define ADEL_STACK_DEPTH 5
 #endif
 
+/** Adel activation record
+ *
+ *  Minimum activation record includes the "program counter" for this
+ *  function, and the next wait time (for adelay).
+ */
 struct AdelAR
 {
-  uint16_t line;
+  uint16_t pc;
   uint32_t wait;
+  uint32_t val;
 };
 
 class AdelRuntime
@@ -39,6 +45,9 @@ public:
   // -- Current function (index into stack)
   int current;
 
+  // -- Yield value used by yourturn/myturn
+  uint32_t yieldVal;
+
   // -- Constructor: set everything to null
   AdelRuntime() : current(0)
   {
@@ -46,7 +55,7 @@ public:
       stack[i] = 0;
     }
   }
-    
+  
   // -- Helper method to initialize an activation record
   //    for the first time (note: uses malloc)
   AdelAR * init_ar(int index, int size_in_bytes)
@@ -69,7 +78,7 @@ public:
   
 private:
   _status m_status;
-  
+
 public:
   adel(_status s) : m_status(s) {}
   adel() : m_status(ANONE) {}
@@ -90,12 +99,11 @@ public:
 
 /** Initialize
  */
-#define ainit(c) { AdelAR * ar = AdelRuntime::curStack->stack[c]; if (ar) ar->line = 0; }
+#define ainit(c) { AdelAR * ar = AdelRuntime::curStack->stack[c]; if (ar) ar->pc = 0; }
 
-/** my(v)
- *
- *  Get a local variable from the activation record */
-#define my(v) (a_me->v)
+/** Parent activation record
+ */
+#define acallerar AdelRuntime::curStack->stack[a_my_index >> 1]
 
 /** acall(res, c, f)
  *
@@ -114,7 +122,7 @@ public:
   Serial.print("]:");				\
   Serial.println(line)
 #else
-#define adel_debug(m, index, func, line)  ;
+#define adel_debug(m, index, func, pc)  ;
 #endif
 
 /** concat
@@ -125,6 +133,14 @@ public:
  */
 #define aconcat2(a,b) a##b
 #define aconcat(a,b) aconcat2(a,b)
+
+/** acurpc
+ * 
+ *  This macro encapsulates the representation of a program counter in
+ *  Adel. Based on the __LINE__ directive.
+ */
+
+#define acurpc(offset) (__LINE__*2 + offset)
 
 // ------------------------------------------------------------
 //   User macros
@@ -169,8 +185,9 @@ public:
 
 /** abegin
  *
- * Always add abegin and aend to every adel function. This version can only
- * be used when there are no local persistent variables.
+ * Always add abegin and aend to every adel function. Note that there are
+ * two versions of abegin. This version can only be used when there are no
+ * local persistent variables.
  */
 #define abegin								\
   int a_my_index = AdelRuntime::curStack->current;			\
@@ -180,7 +197,8 @@ public:
     a_me = (AdelAR *) AdelRuntime::curStack->init_ar(a_my_index,sizeof(AdelAR)); \
   }									\
   adel f_status, g_status;						\
-  switch (my(line)) {							\
+  bool a_skipahead = false;						\
+  switch (my(pc)) {							\
  case 0:
 
 /** abeginvars
@@ -205,7 +223,8 @@ public:
     a_me = (LocalAdelAR *) AdelRuntime::curStack->init_ar(a_my_index,sizeof(LocalAdelAR)); \
   }									\
   adel f_status, g_status;						\
-  switch (my(line)) {							\
+  bool a_skipahead = false;						\
+  switch (my(pc)) {							\
   case 0
 
 /** aend
@@ -216,33 +235,41 @@ public:
   case ADEL_FINALLY: ;							\
   }									\
   adel_debug("aend", a_my_index, __FUNCTION__, __LINE__);		\
-  my(line) = ADEL_FINALLY;						\
+  my(pc) = ADEL_FINALLY;						\
   return adel::ADONE;
+
+// ------------------------------------------------------------
+//   General Adel functions
+
+/** my(v)
+ *
+ *  Get a local variable from the activation record */
+#define my(v) (a_me->v)
 
 /** adelay
  *
  *  Semantics: delay this function for t milliseconds
  */
 #define adelay(t)							\
-    my(line) = __LINE__;						\
+    my(pc) = acurpc(0);							\
     my(wait) = millis() + t;						\
     adel_debug("adelay", a_my_index, __FUNCTION__, __LINE__);		\
- case __LINE__:								\
+ case acurpc(0):							\
     if (millis() < my(wait)) return adel::ACONT;
 
-/** ado
+/** andthen
  *
- *  Semantics: execute f synchronously, until it is done (returns false)
+ *  Semantics: execute f synchronously, until it is done (returns DONE)
  *  Example use:
- *     ado( turn_on_light() );
- *     ado( turn_off_light() );
+ *     andthen( turn_on_light() );
+ *     andthen( turn_off_light() );
  */
-#define ado( f )						\
-    my(line) = __LINE__;					\
-    ainit(achild(1));						\
-    adel_debug("ado", a_my_index, __FUNCTION__, __LINE__);	\
-  case __LINE__:						\
-    acall(f_status, 1, f);					\
+#define andthen( f )							\
+    my(pc) = acurpc(0);							\
+    ainit(achild(1));							\
+    adel_debug("andthen", a_my_index, __FUNCTION__, __LINE__);		\
+  case acurpc(0):							\
+    acall(f_status, 1, f);						\
     if ( f_status.cont() ) return adel::ACONT
 
 /** await
@@ -250,9 +277,9 @@ public:
  *  condition CANNOT be an adel function.
  */
 #define await( c )							\
-    my(line) = __LINE__;						\
+    my(pc) = acurpc(0);							\
     adel_debug("await", a_my_index, __FUNCTION__, __LINE__);		\
-  case __LINE__:							\
+  case acurpc(0):							\
     if ( ! ( c ) ) return adel::ACONT
 
 /** aforatmost
@@ -267,15 +294,14 @@ public:
  *    }
  */
 #define aforatmost( t, f )						\
-    my(line) = __LINE__;						\
+    my(pc) = acurpc(0);							\
     ainit(achild(1));							\
     my(wait) = millis() + t;						\
     adel_debug("aforatmost", a_my_index, __FUNCTION__, __LINE__);	\
-  case __LINE__:							\
+  case acurpc(0):							\
     acall(f_status, 1, f);						\
-    if (f_status.cont() && millis() < my(wait))				\
-      return adel::ACONT;						\
-    if ( ! f_status.done())
+    if (f_status.cont() && millis() < my(wait)) return adel::ACONT;	\
+    if ( ! f_status.done()) 
 
 /** atogether
  *
@@ -284,26 +310,25 @@ public:
  *      atogether( flash_led(), play_sound() );
  */
 #define atogether( f , g )						\
-    my(line) = __LINE__;						\
+    my(pc) = acurpc(0);							\
     ainit(achild(1));							\
     ainit(achild(2));							\
     adel_debug("atogether", a_my_index, __FUNCTION__, __LINE__);	\
-  case __LINE__:							\
+  case acurpc(0):							\
     acall(f_status, 1, f);						\
     acall(g_status, 2, g);						\
-    if (f_status.cont() || g_status.cont())				\
-      return adel::ACONT;
+    if (f_status.cont() || g_status.cont()) return adel::ACONT;
 
 /** auntil
  *
  *  Semantics: execute g until f completes.
  */
 #define auntil( f , g )							\
-    my(line) = __LINE__;						\
+    my(pc) = acurpc(0);							\
     ainit(achild(1));							\
     ainit(achild(2));							\
     adel_debug("auntil", a_my_index, __FUNCTION__, __LINE__);		\
-  case __LINE__:							\
+  case acurpc(0):							\
     acall(f_status, 1, f);						\
     acall(g_status, 2, g);						\
     if (f_status.cont()) return adel::ACONT;
@@ -323,15 +348,14 @@ public:
  *     }
  */
 #define auntileither( f , g )						\
-    my(line) = __LINE__;						\
+    my(pc) = acurpc(0);							\
     ainit(achild(1));							\
     ainit(achild(2));							\
     adel_debug("auntileither", a_my_index, __FUNCTION__, __LINE__);	\
-  case __LINE__:							\
+  case acurpc(0):							\
     acall(f_status, 1, f);						\
     acall(g_status, 2, g);						\
-    if (f_status.cont() && g_status.cont())				\
-      return adel::ACONT;						\
+    if (f_status.cont() && g_status.cont()) return adel::ACONT;		\
     if (f_status.done())
 
 /** alternate
@@ -340,46 +364,47 @@ public:
  *  calls "ayourturn". Then start executing the second function until *it*
  *  calls "ayourturn", at which point continue executing the first one
  *  where it left off. Continue until either one finishes.
- *
  */
 #define alternate( f , g )						\
-    my(line) = __LINE__;						\
+    my(pc) = acurpc(0);							\
     ainit(achild(1));							\
     ainit(achild(2));							\
     adel_debug("alternate", a_my_index, __FUNCTION__, __LINE__);	\
-    my(wait) = 0;							\
-  case __LINE__:							\
-  if (my(wait) == 0) {							\
+ case acurpc(0):							\
     acall(f_status, 1, f);						\
     if (f_status.cont()) return adel::ACONT;				\
     if (f_status.yield()) {						\
-      my(wait) = 1;							\
+      my(pc) = acurpc(1);						\
       return adel::ACONT;						\
     }									\
-  } else { 								\ 
-    acall(g_status, 2, g);						\
-    if (g_status.cont()) return adel::ACONT;				\
-    if (g_status.yield()) {						\
-      my(wait) = 0;							\
-      return adel::ACONT;						\
-    }									\
-    if (g_status.done()) {						\
-      ainit(achild(2));							\
-      my(wait) = 0;							\
-      return adel::ACONT;						\
-    }									\
-  }
+    a_skipahead = true;							\
+ case acurpc(1):							\
+    if ( ! a_skipahead) {						\
+      acall(g_status, 2, g);						\
+      if (g_status.cont()) return adel::ACONT;				\
+      if (g_status.yield()) {						\
+        my(pc) = acurpc(0);						\
+        return adel::ACONT;						\
+      }									\
+    }
 
 /** ayourturn
  *
  *  Use only in functions being called by "alternate". Stop executing this
  *  function and start executing the other function.
  */
-#define ayourturn							\
-    my(line) = __LINE__;						\
+#define ayourturn(v)							\
+    my(pc) = acurpc(0);							\
+    acallerar->val = v;							\
     adel_debug("ayourturn", a_my_index, __FUNCTION__, __LINE__);	\
-    return adel::AYIELD;							\
-  case __LINE__: ;
+    return adel::AYIELD;						\
+  case acurpc(0): ;
+
+/** amyturn
+ *
+ *  Get the value passed to this function by ayourturn
+ */
+#define amyturn acallerar->val
 
 /** afinish
  * 
@@ -387,7 +412,7 @@ public:
  *  caller that it is done.
  */
 #define afinish							\
-    my(line) = ADEL_FINALLY;					\
+    my(pc) = ADEL_FINALLY;					\
     adel_debug("afinish", a_my_index, __FUNCTION__, __LINE__);	\
     return adel::ACONT;
 
