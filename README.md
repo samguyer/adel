@@ -219,6 +219,51 @@ adel brighten(int pin)
 }
 ```
 
+Finally, we can connect these two in the caller to get the aggregate behavior:
+
+```{c++}
+alternate( button(2) , brighten(11) );
+```
+
+## Top-level loop
+
+Since the top-level loop function in an Arduino program is not an Adel function, we need some machinery to get the whole execution process started. The simplest construct is `arepeat`, which just executed the whole Adel program over and over. For example, if your program creates an elaborate light pattern, `arepeat` will keep playing the pattern repeatedly.
+
+```{c++}
+void loop()
+{ 
+  arepeat( mylightshow() );
+}
+```
+
+One nice thing about the top-level loop is that you can put as many of these "processes" as you want, and they all run concurrently:
+
+```{c++}
+void loop()
+{ 
+  arepeat( mylightshow() );
+  arepeat( mysoundshow() );
+}
+```
+
+If you really only want the program to run one time, you can write `aonce`, but the device will not do anything else until it is restarted.
+
+```{c++}
+void loop()
+{ 
+  aonce( mylightshow() );
+}
+```
+
+Finally, at the top level you can schedule Adel functions to be run at a specific interval using `aevery`. For example, let's say you want to check for some user input every 500ms throughout the whole light show, you can write this:
+
+```{c++}
+void loop()
+{ 
+  arepeat( mylightshow() );
+  aevery( 500, checkforinput() );
+}
+```
 
 ## WARNINGS
 
