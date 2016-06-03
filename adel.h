@@ -352,7 +352,7 @@ public:
   case acurpc:								\
     acall(f_status, 1, f);						\
     acall(g_status, 2, g);						\
-    if (f_status.notdone() && g_status.notdone()) return adel::ACONT;		\
+    if (f_status.notdone() && g_status.notdone()) return adel::ACONT;	\
     my(condition) = f_status.done();					\
     my(pc) = alaterpc(1);						\
   case alaterpc(1):							\
