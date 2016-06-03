@@ -57,23 +57,23 @@ The central problem is the `delay()` function, which makes timing easy for indiv
 Concurrency in Adel is specified at the function granularity, using a fork-join style of parallelism. Functions are designated as "Adel functions" by defining them in a stylized way. The body of the function can use any of the Adel library routines shown below:
 
 * `adelay( T )` : asynchronously delay the current function for T milliseconds.
-* `ado( f )` : run Adel function `f` to completion before continuing.
-* `awaituntil( c )` : wait asynchronously until condition `c` is true (`c` must not be an Adel function).
+* `andthen( f )` : run Adel function `f` to completion before continuing.
+* `await( c )` : wait asynchronously until condition `c` is true (`c` must *not* be an Adel function).
 * `aforatmost( T, f )` : run Adel function `f` until it completes, or T milliseconds (whichever comes first)
 * `atogether( f , g )` : run Adel functions `f` and `g` concurrently until they **both** finish.
 * `auntil( f , g )` : run Adel function `g` until `f` completes.
 * `auntileither( f , g ) { ... } else { ... }` : run Adel functions `f` and `g` concurrently until **one** of them finishes. Executes the true branch if `f` finishes first or the false branch if `g` finishes first.
 * `afinish` : finish executing the current function (like a return)
-* `aforevery( f ) { ... }` : run `f` continuously until it yields; then run `g` until it yields. Continue back and forth until `f` completes.
-* `ayield` : pause this function and switch to the other function (see aforevery)
+* `alternate( f , g )` : run `f` continuously until it yields by calling `ayourturn`; then run `g` until it yields. Continue back and forth until either function completes.
+* `ayourturn( v )` : use in a function being called by `alternate` to yield control to the other function. The value `v` is made available to the other function.
+* `amyturn` : gets the value passed through by `ayourturn`.
 
 Using these routines we can rewrite the blink routine:
 
 ```{c++}
 adel blink(int some_pin, int N) 
 {
-  abegin;
-  asteps:
+  abegin:
   while (1) {
     digitalWrite(some_pin, HIGH);
     adelay(N);
@@ -84,7 +84,7 @@ adel blink(int some_pin, int N)
 }
 ```
 
-Every Adel function contains a minimum of three things: return type `adel`, and macros `abegin`, `asteps:`, and `aend` at the begining and end of the function. But otherwise, the code is almost identical. The key feature is that we can run blink concurrently, like this:
+Every Adel function contains a minimum of three things: return type `adel`, and macros `abegin:` and `aend` at the begining and end of the function. But otherwise, the code is almost identical. The key feature is that we can run blink concurrently, like this:
 
 ```{c++}
 atogether( blink(3, 500), blink(4, 500) );
@@ -100,8 +100,7 @@ The same construct could be use to implement a timeout by defining a function th
 
 ```{c++}
 adel timeout(int ms) {
-  abegin;
-  asteps:
+  abegin:
   adelay(ms);
   aend;
 }
@@ -119,7 +118,7 @@ Timeouts are so common, though, that Adel supports this construct directly, with
 aforatmost( 2000, blink(3, 350) );
 ```
 
-One special feature of `aforatmost` is that it behaves like a conditional, where the true branch is executed only when the timeout occurs first:
+One special feature of `aforatmost` is that it behaves like a conditional, where the true branch is executed only when the timeout occurs first, and the optional false branch is executed if the function finishes before the timeout:
 
 ```{c++}
 aforatmost( 2000, blink(3, 350) ) {
@@ -137,47 +136,85 @@ auntileither( button(pin), blink(3, 350) ) {
 }
 ```
 
-Here is the `button()` function, which returns when the user presses the button. It uses the `awaituntil` construct to wait for the pin to go high or low:
+Here is the `button()` function, which returns when the user presses the button. It uses the `await` construct to wait for the pin to go high or low:
 
 ```{c++}
 adel button(int pin)
 {
-  abegin;
-  asteps:
-    while ( 1 ) {
-      awaituntil (digitalRead(pin) == HIGH);
-      adelay (50);
-      if (digitalRead(pin) == HIGH) {
-        adelay(200);
-        awaituntil (digitalRead(pin) == LOW);
-        afinish;
-      }
+  abegin:
+   await (digitalRead(pin) == HIGH);
+   adelay (50);
+   if (digitalRead(pin) == HIGH) {
+     await (digitalRead(pin) == LOW);
+   }
+  aend;
+}
+```
+
+## Local variables
+
+One of the challenges in Adel is supporting local variables. From the standpoint of the underlying C runtime, control enters and exits each function many times before it finishes. Each time it exists, any local variables disappear and lose their values. The latest version of Adel allows the user to declare local variables using the `avars` construct. Syntactically, these variables look like local variables, but they are secretly held in storage on the heap. These variables must be accessed througn the `my` macro, which hides some pointer junk.
+
+```{c++}
+adel counter()
+{
+  avars {
+    int i;
+  }
+  abegin:
+    for (my(i) = 0; my(i) < 100; my(i)++) {
+      digitalWrite(pin, my(i));
+      adelay(100);
     }
   aend;
 }
 ```
 
+It's not pretty, but it works!
 
 ## Yield and forevery
 
-Classic coroutines allow a function to yield to its caller **without** losing track of where it is currently executing. Subsequent entry to the function simple continues where it left off. The problem with this approach is that it requires an explicit "init" to start the function. Instead, Adel limits this behavior for a "forevery" construct in the caller, which is simpler to understand. 
+Classic coroutines allow a function to yield to its caller **without** losing track of where it is currently executing. Subsequent entry to the function continues where it left off. The problem with this approach is that it requires an explicit "init" to start the function, followed by repeated invocations ("next") until it is done. 
 
-**TBD**
+Instead, Adel limits this behavior to single `alternate` construct, which takes two functions and alternates executing each until it calls `ayourturn`, which is like "yield". A single integer value can be passed between them to communicate a value. In this example the button routine is augmented with a yield when the button is held down; the value passed is how long it has been held. We can use this version to make an LED get brighter and brighter until the button is released.
 
-## Local variables
-
-One of the challenges in Adel is supporting local variables. From the standpoint of the C runtime, control enters and exits each function many times before it reaches the Adel finish, which would cause the local variables to disappear and lose their values. The latest version of Adel allows the user to declare local variables between `abegin` and `asteps:`. Syntactically, these variables look like local variables, but they are secretly held in storage on the heap. These variables must be accessed througn the `my` macro, which hides some pointer junk.
+Here is the augmented button routine. It uses a local variable to keep track of how much time has elapsed since the button was initially pressed.
 
 ```{c++}
-adel counter()
+adel button(int pin)
 {
-  abegin;
-    int i;
-  asteps:
-    for (my(i) = 0; my(i) < 100; my(i)++) {
-      digitalWrite(pin, my(i));
-      adelay(100);
+  avars {
+      uint32_t starttime;
+  }
+  abegin:
+    await (digitalRead(pin) == HIGH);
+    my(starttime) = millis();
+    adelay (50);
+    if (digitalRead(pin) == HIGH) {
+      while (digitalRead(pin) != LOW) {
+        ayourturn(millis() - my(starttime));
+      }
     }
+    
+  aend;
+}
+```
+
+Here is a simple function that receives these values and sets the LED brightness accordingly. Notice the use of `amyturn`, which gets the value sent by the button.
+
+```{c++}
+adel brighten(int pin)
+{
+  avars {
+    int level;
+  }
+  abegin:
+    while (1) {
+      analogWrite(pin, my(level));
+      ayourturn(0);
+      my(level) = map(amyturn, 0, 10000, 0, 256);
+    }
+    
   aend;
 }
 ```
