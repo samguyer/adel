@@ -68,7 +68,7 @@ Concurrency in Adel is specified at the function granularity, using a fork-join 
 * `ayourturn( v )` : use in a function being called by `alternate` to yield control to the other function. The value `v` is made available to the other function.
 * `amyturn` : gets the value passed through by `ayourturn`.
 
-Using these routines we can rewrite the blink routine:
+Using these routines we can rewrite the blink routine (below). Notice that I added a `while (1)` infinite loop -- this function will blink the light forever, or until it is stopped by its caller. *And that's ok* because it will not stop other code from running.
 
 ```{c++}
 adel blink(int some_pin, int N) 
@@ -95,6 +95,8 @@ This code does exactly what we want: it blinks the two lights at different inter
 ```{c++}
 auntil( button(pin), blink(3, 350) );
 ```
+
+The semantics are simple: when the `button` routine completes, `auntil` simply stops calling the `blink` routine, in effect interrupting it at the last point it yielded. Currently, `blink` has no opportunity to respond to this interruption or clean up in any way.
 
 The same construct could be use to implement a timeout by defining a function that simply delays for a specified amount of time:
 
