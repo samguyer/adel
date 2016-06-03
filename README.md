@@ -1,5 +1,5 @@
-# adel
-A new way to program microcontrollers
+# Adel
+**A new way to program microcontrollers**
 
 **NOTE:** This code is under active development, so the API could still change.
 
