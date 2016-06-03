@@ -172,7 +172,7 @@ adel counter()
 
 It's not pretty, but it works!
 
-## Yield and forevery
+## Your turn, my turn
 
 Classic coroutines allow a function to yield to its caller **without** losing track of where it is currently executing. Subsequent entry to the function continues where it left off. The problem with this approach is that it requires an explicit "init" to start the function, followed by repeated invocations ("next") until it is done. 
 
