@@ -61,8 +61,7 @@ Concurrency in Adel is specified at the function granularity, using a fork-join 
 * `await( c )` : wait asynchronously until condition `c` is true (`c` must *not* be an Adel function).
 * `aforatmost( T, f )` : run Adel function `f` until it completes, or T milliseconds (whichever comes first)
 * `atogether( f , g )` : run Adel functions `f` and `g` concurrently until they **both** finish.
-* `auntil( f , g )` : run Adel function `g` until `f` completes.
-* `auntileither( f , g ) { ... } else { ... }` : run Adel functions `f` and `g` concurrently until **one** of them finishes. Executes the true branch if `f` finishes first or the false branch if `g` finishes first.
+* `auntil( f , g ) { ... } else { ... }` : run Adel functions `f` and `g` concurrently until **one** of them finishes. Executes the true branch if `f` finishes first or the false branch if `g` finishes first.
 * `afinish` : finish executing the current function (like a return)
 * `alternate( f , g )` : run `f` continuously until it yields by calling `ayourturn`; then run `g` until it yields. Continue back and forth until either function completes.
 * `ayourturn( v )` : use in a function being called by `alternate` to yield control to the other function. The value `v` is made available to the other function.
@@ -84,7 +83,7 @@ adel blink(int some_pin, int N)
 }
 ```
 
-Every Adel function contains a minimum of three things: return type `adel`, and macros `abegin:` and `aend` at the begining and end of the function. But otherwise, the code is almost identical. The key feature is that we can run blink concurrently, like this:
+Every Adel function contains a minimum of three things: return type `adel`, and macros `abegin:` and `aend` at the begining and end of the function. (**NOTE** that `abegin` is always followed by a colon). But otherwise, the code is almost identical. The key feature is that we can run blink concurrently, like this:
 
 ```{c++}
 atogether( blink(3, 500), blink(4, 500) );
@@ -128,7 +127,7 @@ aforatmost( 2000, blink(3, 350) ) {
 }
 ```
 
-The `auntil` construct has a similar analogue called `auntileither`, which executes two functions concurrently (like `atogether`), but stops when **either** one finishes. The true branch is executed if the first one finishes first; the false branch is executed if the second one finishes first:
+The `auntil` construct can be used in the same way to detect which of the two functions finished first. The true branch is executed if the first one finishes first; the false branch is executed if the second one finishes first:
 
 ```{c++}
 auntileither( button(pin), blink(3, 350) ) {
@@ -138,18 +137,21 @@ auntileither( button(pin), blink(3, 350) ) {
 }
 ```
 
-Here is the `button()` function, which returns when the user presses the button. It uses the `await` construct to wait for the pin to go high or low:
+Here is the `button()` function, which returns when the user presses the button. It uses the `await` construct to wait for the pin to go high or low. Notice that we enclose the whole routine in an infinite `while (1)` loop, so that the routine *only* finishes when the button is pushed. 
 
 ```{c++}
 adel button(int pin)
 {
-  abegin:
-   await (digitalRead(pin) == HIGH);
-   adelay (50);
-   if (digitalRead(pin) == HIGH) {
-     await (digitalRead(pin) == LOW);
+   abegin:
+   while (1) {
+      await (digitalRead(pin) == HIGH);
+      adelay (50);
+      if (digitalRead(pin) == HIGH) {
+         await (digitalRead(pin) == LOW);
+         afinish;
+      }
    }
-  aend;
+   aend;
 }
 ```
 
