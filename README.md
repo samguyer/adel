@@ -83,13 +83,15 @@ adel blink(int some_pin, int N)
 }
 ```
 
-Every Adel function contains a minimum of three things: return type `adel`, and macros `abegin:` and `aend` at the begining and end of the function. (**NOTE** that `abegin` is always followed by a colon). But otherwise, the code is almost identical. The key feature is that we can run blink concurrently, like this:
+Every Adel function contains a minimum of three things: return type `adel`, and macros `abegin:` and `aend` at the begining and end of the function. (**NOTE** that ``abegin`` is always followed by a colon). But otherwise, the code is almost identical. The key feature is that we can execute blink concurrently, like this:
 
 ```{c++}
 atogether( blink(3, 500), blink(4, 500) );
 ```
 
-This code does exactly what we want: it blinks the two lights at different intervals at the same time. The `atogether` macro waits until both functions are complete, which is not always desirable. For example, we might want to blink a light until a button is pressed. Assuming we have a `button` function (shown later), we can use the `auntil` construct:
+This code does exactly what we want: it blinks the two lights at different intervals at the same time. Notice also that we have two instances of blink doing slightly different things concurrently -- this kind of modularity and reuse is much harder to achieve in the traditional coding style.
+
+The `atogether` macro waits until both functions are complete, which is not always desirable. For example, we might want to blink a light until a button is pressed. Assuming we have a `button` function (shown later), we can use the `auntil` construct:
 
 ```{c++}
 auntil( button(pin), blink(3, 350) );
