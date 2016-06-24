@@ -97,7 +97,7 @@ The `atogether` macro waits until both functions are complete, which is not alwa
 auntil( button(pin), blink(3, 350) );
 ```
 
-The semantics are simple: when the `button` routine completes, `auntil` simply stops calling the `blink` routine, in effect interrupting it at the last point it yielded. Currently, `blink` has no opportunity to respond to this interruption or clean up in any way.
+The semantics are simple: when the `button` routine completes, `auntil` simply stops calling the `blink` routine, in effect interrupting it at the last point it yielded. (In the current implementation, the interrupted function has no opportunity to respond to this interruption or clean up in any way.)
 
 The same construct could be use to implement a timeout by defining a function that simply delays for a specified amount of time:
 
@@ -159,7 +159,7 @@ adel button(int pin)
 
 ## Local variables
 
-One of the challenges in Adel is supporting local variables. From the standpoint of the underlying C runtime, control enters and exits each function many times before it finishes. Each time it exists, any local variables disappear and lose their values. The latest version of Adel allows the user to declare local variables using the `avars` construct. Syntactically, these variables look like local variables, but they are secretly held in storage on the heap. These variables must be accessed througn the `my` macro, which hides some pointer junk.
+One of the challenges in Adel is supporting local variables. From the standpoint of the underlying C runtime, control enters and exits each function many times before it finishes. Each time it exits, any local variables disappear and lose their values. The latest version of Adel allows the user to declare local variables using the `avars` construct. Syntactically, these variables look like local variables, but they are secretly held in storage on the heap. They must be accessed througn the `my` macro, which hides some pointer junk.
 
 ```{c++}
 adel counter()
@@ -182,7 +182,7 @@ It's not pretty, but it works!
 
 Classic coroutines allow a function to yield to its caller **without** losing track of where it is currently executing. Subsequent entry to the function continues where it left off. The problem with this approach is that it requires an explicit "init" to start the function, followed by repeated invocations ("next") until it is done. 
 
-Instead, Adel limits this behavior to single `alternate` construct, which takes two functions and alternates executing each until it calls `ayourturn`, which is like "yield". A single integer value can be passed between them to communicate a value. In this example the button routine is augmented with a yield when the button is held down; the value passed is how long it has been held. We can use this version to make an LED get brighter and brighter until the button is released.
+Instead, Adel limits this behavior to single `alternate` construct, which takes two functions and alternates executing then until either one finishes. A function chooses when to let the other function execute by calling `ayourturn`, which is like "yield". A single integer value can be passed between them to communicate a value. In this example the button routine is augmented with a yield when the button is held down; the value passed is how long it has been held. We can use this version to make an LED get brighter and brighter until the button is released.
 
 Here is the augmented button routine. It uses a local variable to keep track of how much time has elapsed since the button was initially pressed.
 
@@ -193,12 +193,15 @@ adel button(int pin)
       uint32_t starttime;
   }
   abegin:
-    await (digitalRead(pin) == HIGH);
-    my(starttime) = millis();
-    adelay (50);
-    if (digitalRead(pin) == HIGH) {
-      while (digitalRead(pin) != LOW) {
-        ayourturn(millis() - my(starttime));
+    while (1) {
+      await (digitalRead(pin) == HIGH);
+      my(starttime) = millis();
+      adelay (50);
+      if (digitalRead(pin) == HIGH) {
+         while (digitalRead(pin) != LOW) {
+            ayourturn(millis() - my(starttime));
+         }
+         afinish;
       }
     }
     
@@ -206,7 +209,7 @@ adel button(int pin)
 }
 ```
 
-Here is a simple function that receives these values and sets the LED brightness accordingly. Notice the use of `amyturn`, which gets the value sent by the button.
+Here is a simple function that receives these values and sets the LED brightness accordingly. Notice the use of `amyturn`, which gets the value sent by the button. The `map` function is provided by the Arduino standard library; it just maps an integer value from one range to another range. In this case, we map the time (in milliseconds, from 0 to 10 seconds) to the brightness, which ranges from 0 to 255.
 
 ```{c++}
 adel brighten(int pin)
@@ -215,6 +218,7 @@ adel brighten(int pin)
     int level;
   }
   abegin:
+    my(level) = 0;
     while (1) {
       analogWrite(pin, my(level));
       ayourturn(0);
@@ -233,7 +237,7 @@ alternate( button(2) , brighten(11) );
 
 ## Top-level loop
 
-Since the top-level loop function in an Arduino program is not an Adel function, we need some machinery to get the whole execution process started. The simplest construct is `arepeat`, which just executed the whole Adel program over and over. For example, if your program creates an elaborate light pattern, `arepeat` will keep playing the pattern repeatedly.
+Since the top-level loop function in an Arduino program is not an Adel function, we need some machinery to get the whole execution process started. The simplest construct is `arepeat`, which executes the whole Adel program over and over. For example, if your program creates an elaborate light pattern, `arepeat` will keep playing the pattern repeatedly.
 
 ```{c++}
 void loop()
@@ -252,7 +256,7 @@ void loop()
 }
 ```
 
-If you really only want the program to run one time, you can write `aonce`, but the device will not do anything else until it is restarted.
+If you really only want the program to run one time, you can write `aonce`, but once the program completes the device will not do anything else until it is restarted.
 
 ```{c++}
 void loop()
@@ -273,7 +277,7 @@ void loop()
 
 ## WARNINGS
 
-(1) Be very careful using `switch` and `break` inside Adel functions. The co-routine implementation encloses all function bodies in a giant switch statement to allow them to be reentrant. Adding other switch and break statements can have unpredictable results.
+(1) Do not use `switch` or `break` statements inside Adel functions. The co-routine implementation encloses all function bodies in a giant switch statement to allow them to be reentrant. Adding other switch and break statements can have unpredictable results.
 
 (2) The internal stack that keeps track of concurrent functions has a limited depth determined at compile time. The default depth is 5, which is fine for most applications, but you can override this number by adding #define ADEL_STACK_DEPTH before you include the Adel header.
 
