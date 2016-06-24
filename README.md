@@ -57,7 +57,7 @@ The central problem is the `delay()` function, which makes timing easy for indiv
 Concurrency in Adel is specified at the function granularity, using a fork-join style of parallelism. Functions are designated as "Adel functions" by defining them in a stylized way. The body of the function can use any of the Adel library routines shown below:
 
 * `adelay( T )` : asynchronously delay the current function for T milliseconds.
-* `andthen( f )` : run Adel function `f` to completion before continuing.
+* `andthen( f )` : run Adel function `f` to completion before continuing (synchronous execution).
 * `await( c )` : wait asynchronously until condition `c` is true (`c` must *not* be an Adel function).
 * `aforatmost( T, f )` : run Adel function `f` until it completes, or T milliseconds (whichever comes first)
 * `atogether( f , g )` : run Adel functions `f` and `g` concurrently until they **both** finish.
@@ -136,6 +136,22 @@ auntileither( button(pin), blink(3, 350) ) {
     // -- User hit the button
 } else {
     // -- blink completed
+}
+```
+
+Of course, we can still force functions to occur synchronously, but now we need to say that explicitly. The `andthen` macro executes a single Adel function to completion before moving to the next one. For example, here is how we could program a button that turns a light on and off:
+
+```{c++}
+adel toggle(int buttonpin, int ledpin)
+{
+   abegin:
+   while (1) {
+      andthen( button(buttonpin) );
+      digitalWrite( ledpin, HIGH );
+      andthen( button(buttonpin) );
+      digitalWrite( ledpin, LOW );
+   }
+   aend;
 }
 ```
 
