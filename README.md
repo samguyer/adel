@@ -1,7 +1,7 @@
 # Adel
 **A new way to program microcontrollers**
 
-**NOTE:** This code is under active development, so the API could still change.
+**NOTE:** This code is under active development, so the API could still change. Also, please see usage warnings at the end of this document. 
 
 Adel is a library that makes it easier to program microcontrollers, such as the Arduino. The main idea is to provide a simple kind of concurrency, similar to coroutines. Using Adel, any function can be made to behave in an asynchronous way, allowing it to run concurrently with other Adel functions without interfering with them. The library is implemented entirely as a set of C/C++ macros, so it requires no new compiler tools or flags. Just download the Adel directory and install it in your Arduino IDE libraries folder.
 
@@ -299,3 +299,4 @@ void loop()
 
 (3) Loops, like `for` and `while`, are perfectly fine to use inside Adel functions, but make sure that there is at least one Adel function (like `adelay`) in the body, so that the loop does not stall the rest of the program.
 
+(4) All Adel functions must be called within one of the concurrency constructs. You should never call an Adel function directly as a regular statement. It will not do what you want (and probably won't even compile).
