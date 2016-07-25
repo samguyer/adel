@@ -316,10 +316,11 @@ public:
     acall(g_status, 2, g);						\
     if (f_status.notdone() || g_status.notdone()) return adel::ACONT;
 
-/** auntil
+/** OLD auntil
  *
  *  Semantics: execute g until f completes.
  */
+/*
 #define auntil( f , g )							\
     my(pc) = acurpc;							\
     ainit(achild(1));							\
@@ -329,8 +330,9 @@ public:
     acall(f_status, 1, f);						\
     acall(g_status, 2, g);						\
     if (f_status.notdone()) return adel::ACONT;
+*/
 
-/** auntileither
+/** auntil
  *
  *  Semantics: execute f and g until either one of them finishes (contrast
  *  with atogether). This construct behaves like a conditional statement:
@@ -338,17 +340,17 @@ public:
  *  which are executed depending on whether the first function finished
  *  first or the second one did. Example use:
  *
- *     auntileither( button(), flash_led() ) { 
+ *     auntil( button(), flash_led() ) { 
  *        // button finished first 
  *     } else {
  *        // light finished first
  *     }
  */
-#define auntileither( f , g )						\
+#define auntil( f , g )							\
     my(pc) = acurpc;							\
     ainit(achild(1));							\
     ainit(achild(2));							\
-    adel_debug("auntileither", a_my_index, __FUNCTION__, __LINE__);	\
+    adel_debug("auntil", a_my_index, __FUNCTION__, __LINE__);		\
   case acurpc:								\
     acall(f_status, 1, f);						\
     acall(g_status, 2, g);						\
