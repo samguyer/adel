@@ -132,7 +132,7 @@ aforatmost( 2000, blink(3, 350) ) {
 The `auntil` construct can be used in the same way to detect which of the two functions finished first. The true branch is executed if the first one finishes first; the false branch is executed if the second one finishes first:
 
 ```{c++}
-auntileither( button(pin), blink(3, 350) ) {
+auntil( button(pin), blink(3, 350) ) {
     // -- User hit the button
 } else {
     // -- blink completed
