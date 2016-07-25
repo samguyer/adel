@@ -192,7 +192,7 @@ adel counter()
 }
 ```
 
-It's not pretty, but it works!
+It's not pretty, but it works! **Global** variables do not require any special syntax.
 
 ## Your turn, my turn
 
