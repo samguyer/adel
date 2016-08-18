@@ -176,8 +176,8 @@ public:
   static AdelRuntime aconcat(aruntime, __LINE__);			\
   AdelRuntime::curStack = & aconcat(aruntime, __LINE__);		\
   AdelRuntime::curStack->current = 0;					\
-  adel f_status = f;							\
-  if (f_status.done()) { ainit(0); }
+  adel aconcat(f_status, __LINE__) = f;					\
+  if (aconcat(f_status, __LINE__).done()) { ainit(0); }
 
 /** aevery
  *  
@@ -188,8 +188,8 @@ public:
   AdelRuntime::curStack = & aconcat(aruntime, __LINE__);		\
   static uint32_t aconcat(anexttime,__LINE__) = millis() + T;		\
   AdelRuntime::curStack->current = 0;					\
-  adel f_status = f;							\
-  if (f_status.done() && aconcat(anexttime,__LINE__) < millis()) {	\
+  adel aconcat(f_status, __LINE__) = f;					\
+  if (aconcat(f_status, __LINE__).done() && aconcat(anexttime,__LINE__) < millis()) {	\
     ainit(0); }
 
 // ------------------------------------------------------------
