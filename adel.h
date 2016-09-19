@@ -117,9 +117,9 @@ public:
 
 /** acall(res, c, f)
  *
- * Call an Adel function and capture the result status. */
+ * Call an Adel function f and capture the result status. */
 #define acall(res, c, f)			\
-  AdelRuntime::curStack->current = achild(c);		\
+  AdelRuntime::curStack->current = achild(c);	\
   res = f;
 
 #ifdef ADEL_DEBUG
@@ -135,14 +135,14 @@ public:
 #define adel_debug(m, index, func, pc)  ;
 #endif
 
-/** concat
+/** gensym
  *
  *  These macros allow us to construct identifier names using line
  *  numbers. For some reason g++ requires two levels of macros to get it to
  *  work as expected.
  */
-#define aconcat2(a,b) a##b
-#define aconcat(a,b) aconcat2(a,b)
+#define agensym2(a,b) a##b
+#define agensym(a,b) agensym2(a,b)
 
 /** acurpc
  * 
@@ -155,7 +155,7 @@ public:
 #define alaterpc(offset) (__LINE__*10 + offset)
 
 // ------------------------------------------------------------
-//   User macros
+//   Top-level functions for use in Arduino loop()
 
 /** aonce
  *
@@ -163,8 +163,8 @@ public:
  *  (and run all Adel functions below it).
  */
 #define aonce( f )							\
-  static AdelRuntime aconcat(aruntime, __LINE__);			\
-  AdelRuntime::curStack = & aconcat(aruntime, __LINE__);		\
+  static AdelRuntime agensym(aruntime, __LINE__);			\
+  AdelRuntime::curStack = & agensym(aruntime, __LINE__);		\
   AdelRuntime::curStack->current = 0;					\
   f;
 
@@ -173,23 +173,23 @@ public:
  *  Run the top adel function over and over.
  */
 #define arepeat( f )							\
-  static AdelRuntime aconcat(aruntime, __LINE__);			\
-  AdelRuntime::curStack = & aconcat(aruntime, __LINE__);		\
+  static AdelRuntime agensym(aruntime, __LINE__);			\
+  AdelRuntime::curStack = & agensym(aruntime, __LINE__);		\
   AdelRuntime::curStack->current = 0;					\
-  adel aconcat(f_status, __LINE__) = f;					\
-  if (aconcat(f_status, __LINE__).done()) { ainit(0); }
+  adel agensym(f_status, __LINE__) = f;					\
+  if (agensym(f_status, __LINE__).done()) { ainit(0); }
 
 /** aevery
  *  
  *  Run this function every T milliseconds.
  */
 #define aevery( T, f )							\
-  static AdelRuntime aconcat(aruntime, __LINE__);			\
-  AdelRuntime::curStack = & aconcat(aruntime, __LINE__);		\
-  static uint32_t aconcat(anexttime,__LINE__) = millis() + T;		\
+  static AdelRuntime agensym(aruntime, __LINE__);			\
+  AdelRuntime::curStack = & agensym(aruntime, __LINE__);		\
+  static uint32_t agensym(anexttime,__LINE__) = millis() + T;		\
   AdelRuntime::curStack->current = 0;					\
-  adel aconcat(f_status, __LINE__) = f;					\
-  if (aconcat(f_status, __LINE__).done() && aconcat(anexttime,__LINE__) < millis()) {	\
+  adel agensym(f_status, __LINE__) = f;					\
+  if (agensym(f_status, __LINE__).done() && agensym(anexttime,__LINE__) < millis()) {	\
     ainit(0); }
 
 // ------------------------------------------------------------
