@@ -297,7 +297,8 @@ public:
     acall(f_status, 1, f);						\
     if (f_status.notdone() && millis() < my(wait)) return adel::ACONT;	\
     my(condition) = f_status.done();					\
- case alaterpc(1):							\
+    my(pc) = alaterpc(1);						\
+  case alaterpc(1):							\
     if ( ! my(condition))
     
 /** atogether
