@@ -175,24 +175,28 @@ adel button(int pin)
 
 ## Local variables
 
-One of the challenges in Adel is supporting local variables. From the standpoint of the underlying C runtime, control enters and exits each function many times before it finishes. Each time it exits, any local variables disappear and lose their values. The latest version of Adel uses C++ lambdas to capture local variables, making them behave as 
+One of the challenges in Adel is supporting local variables. From the standpoint of the underlying C runtime, control enters and exits each function many times before it finishes. Each time it exits, any local variables disappear and lose their values. The latest version of Adel uses C++ lambdas to capture local variables, making them behave as you would expect in a regular function. For example, here is a loop that includes an asynchronous delay:
 
 ```{c++}
 adel counter()
 {
-  avars {
-    int i;
-  }
+  int i;
+
   abegin:
-    for (my(i) = 0; my(i) < 100; my(i)++) {
-      digitalWrite(pin, my(i));
+    for (i = 0; i < 100; i++) {
+      digitalWrite(pin, i);
       adelay(100);
     }
   aend;
 }
 ```
+Some important things to note:
 
-It's not pretty, but it works! **Global** variables do not require any special syntax.
+First, only variables above the `abegin` are persistent across Adel calls (such as `adelay`). You can introduce other local variables in the body of the function, but only as short-lived temporaries.
+
+Second, initializers will probablty not work as expected, so make sure you initialize your variables in the code following `abegin`.
+
+Finally, do not put any other code above the `abegin` -- it will be executed as unexpected times.
 
 ## Your turn, my turn
 
