@@ -190,7 +190,8 @@ adel counter()
   aend;
 }
 ```
-Some important things to note:
+
+The lambda definition inside the `abegin` macro captures the variable `i`, so that its state persists and the loop works as expected. Some important things to note:
 
 First, only variables above the `abegin` are persistent across Adel calls (such as `adelay`). You can introduce other local variables in the body of the function, but only as short-lived temporaries.
 
@@ -209,17 +210,15 @@ Here is the augmented button routine. It uses a local variable to keep track of 
 ```{c++}
 adel button(int pin)
 {
-  avars {
-      uint32_t starttime;
-  }
+  uint32_t starttime;
   abegin:
     while (1) {
       await (digitalRead(pin) == HIGH);
-      my(starttime) = millis();
+      starttime = millis();
       adelay (50);
       if (digitalRead(pin) == HIGH) {
          while (digitalRead(pin) != LOW) {
-            ayourturn(millis() - my(starttime));
+            ayourturn(millis() - starttime);
          }
          afinish;
       }
@@ -234,15 +233,13 @@ Here is a simple function that receives these values and sets the LED brightness
 ```{c++}
 adel brighten(int pin)
 {
-  avars {
-    int level;
-  }
+  int level;
   abegin:
-    my(level) = 0;
+    level = 0;
     while (1) {
-      analogWrite(pin, my(level));
+      analogWrite(pin, level);
       ayourturn(0);
-      my(level) = map(amyturn, 0, 10000, 0, 256);
+      level = map(amyturn, 0, 10000, 0, 256);
     }
     
   aend;
