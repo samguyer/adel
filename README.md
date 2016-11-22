@@ -175,7 +175,7 @@ adel button(int pin)
 
 ## Local variables
 
-One of the challenges in Adel is supporting local variables. From the standpoint of the underlying C runtime, control enters and exits each function many times before it finishes. Each time it exits, any local variables disappear and lose their values. The latest version of Adel allows the user to declare local variables using the `avars` construct. Syntactically, these variables look like local variables, but they are secretly held in storage on the heap. They must be accessed througn the `my` macro, which hides some pointer junk.
+One of the challenges in Adel is supporting local variables. From the standpoint of the underlying C runtime, control enters and exits each function many times before it finishes. Each time it exits, any local variables disappear and lose their values. The latest version of Adel uses C++ lambdas to capture local variables, making them behave as 
 
 ```{c++}
 adel counter()
