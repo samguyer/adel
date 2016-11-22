@@ -27,22 +27,33 @@
  *  Minimum activation record includes the "program counter" for this
  *  function, and the next wait time (for adelay).
  */
-struct AdelAR
+class AdelAR
 {
-  uint16_t pc;
-  uint32_t wait;
+ public:
   uint32_t val;
-  uint8_t  condition;
+  uint16_t pc;
 };
 
 /** LocalAdelAR
  *
- *  This typedef is crucial: some Adel functions do not have local
- *  state, so we want the default LocalAdelAR to be the same as a
- *  general AR. Functions that do have local variables will override
- *  this definition.
+ *  This class is the key to supporting local variables in a natural
+ *  way. The activation record for each Adel function is initialized with a
+ *  lambda that captures the local variables declared above it, creating
+ *  the effect of local variables that persist as the function makes progress.
+ *
+ *  All the templating is necessary to get around the fact that C++11/14 do
+ *  not allow you to declare the type of a lambda.
  */
-typedef AdelAR LocalAdelAR;
+template<typename T>
+class LocalAdelAR : public AdelAR
+{
+public:
+  T run;
+  
+  template<typename T2>
+    LocalAdelAR(T2 the_lambda) : run(the_lambda)
+  {}
+};
 
 class AdelRuntime
 {
@@ -63,15 +74,6 @@ public:
     for (int i = 0; i < (1 << ADEL_STACK_DEPTH); i++) {
       stack[i] = 0;
     }
-  }
-  
-  // -- Helper method to initialize an activation record
-  //    for the first time (note: uses malloc)
-  AdelAR * init_ar(int index, int size_in_bytes)
-  {
-    AdelAR * ar = (AdelAR *) calloc(1, size_in_bytes);
-    stack[index] = ar;
-    return ar;
   }
 };
 
@@ -108,6 +110,7 @@ public:
 #define achild(c) ((a_my_index << 1) + c)
 
 /** Initialize
+ *  Set the "program counter" to zero.
  */
 #define ainit(c) { AdelAR * ar = AdelRuntime::curStack->stack[c]; if (ar) ar->pc = 0; }
 
@@ -144,15 +147,15 @@ public:
 #define agensym2(a,b) a##b
 #define agensym(a,b) agensym2(a,b)
 
-/** acurpc
+/** anextstep
  * 
  *  This macro encapsulates the representation of a program counter in
  *  Adel. Based on the __LINE__ directive. Multiplying by 10 gives us room
  *  to have several cases within a single macro by adding an offset.
  */
 
-#define acurpc (__LINE__*10)
-#define alaterpc(offset) (__LINE__*10 + offset)
+#define anextstep (__LINE__*10)
+#define alaterstep(offset) (__LINE__*10 + offset)
 
 // ------------------------------------------------------------
 //   Top-level functions for use in Arduino loop()
@@ -197,60 +200,59 @@ public:
 
 /** abegin
  *
- * Always add abegin and aend to every adel function. Note that there are
- * two versions of abegin. This version can only be used when there are no
- * local persistent variables.
+ * Always add abegin and aend to every adel function. Note that the lambda
+ * is defined in such a way that all local variables above it are captured
+ * and later copied into the LocalAdelAR. 
  */
 #define abegin								\
-  ;									\
   int a_my_index = AdelRuntime::curStack->current;			\
-  LocalAdelAR * a_me = (LocalAdelAR *) AdelRuntime::curStack->stack[a_my_index];	\
-  if (a_me == 0) {							\
-    adel_debug("abegin", a_my_index, __FUNCTION__, __LINE__);		\
-    a_me = (LocalAdelAR *) AdelRuntime::curStack->init_ar(a_my_index,sizeof(LocalAdelAR)); \
-  }									\
-  adel f_status, g_status;						\
-  bool a_skipahead = false;						\
-  switch (my(pc)) {							\
- case 0
-
-/** avars
- *
- * Alternative to abegin that allows local state. Always use in conjunction
- * with asteps. Any local variables that need to persist in this function
- * should be declared immediately after abeginvars.
- */
-#define avars  struct LocalAdelAR : public AdelAR
+  uint32_t adel_wait;							\
+  uint8_t  adel_condition;						\
+  auto adel_body = [=](uint16_t& adel_pc) mutable {			\
+    adel f_status, g_status;						\
+    bool a_skipahead = false;						\
+    switch (adel_pc) {							\
+   case 0
 
 /** aend
  *
- * Must be the last thing in the Adel function.
+ * Must be the last thing in the Adel function. This macro first wraps up
+ * the big switch statement and closes the lambda. Then it drops back into
+ * the code that it executed every time through the function. First, check
+ * to see if the activation record needs to be initialized, then invoke the
+ * lambda.
  */
 #define aend								\
-  case ADEL_FINALLY: ;							\
-  }									\
-  adel_debug("aend", a_my_index, __FUNCTION__, __LINE__);		\
-  my(pc) = ADEL_FINALLY;						\
-  return adel::ADONE;
+        case ADEL_FINALLY: ;						\
+      }									\
+      adel_debug("aend", a_my_index, __FUNCTION__, __LINE__);		\
+      adel_pc = ADEL_FINALLY;						\
+      return adel::ADONE;						\
+    };									\
+  AdelAR * a_ar = AdelRuntime::curStack->stack[a_my_index];		\
+  LocalAdelAR<decltype(adel_body)> * a_this_ar = 0;			\
+  if (a_ar == 0) {							\
+    adel_debug("abegin", a_my_index, __FUNCTION__, __LINE__);		\
+    a_this_ar = new LocalAdelAR<decltype(adel_body)>(adel_body);	\
+    AdelRuntime::curStack->stack[a_my_index] = a_this_ar;		\
+  } else								\
+    a_this_ar = (LocalAdelAR<decltype(adel_body)> *) a_ar;		\
+  adel result = a_this_ar->run(a_ar->pc);				\
+  return result;
 
 // ------------------------------------------------------------
 //   General Adel functions
-
-/** my(v)
- *
- *  Get a local variable from the activation record */
-#define my(v) (a_me->v)
 
 /** adelay
  *
  *  Semantics: delay this function for t milliseconds
  */
 #define adelay(t)							\
-    my(pc) = acurpc;							\
-    my(wait) = millis() + t;						\
+    adel_pc = anextstep;						\
+    adel_wait = millis() + t;						\
     adel_debug("adelay", a_my_index, __FUNCTION__, __LINE__);		\
- case acurpc:								\
-    if (millis() < my(wait)) return adel::ACONT;
+ case anextstep:							\
+    if (millis() < adel_wait) return adel::ACONT;
 
 /** andthen
  *
@@ -260,10 +262,10 @@ public:
  *     andthen( turn_off_light() );
  */
 #define andthen( f )							\
-    my(pc) = acurpc;							\
+    adel_pc = anextstep;						\
     ainit(achild(1));							\
     adel_debug("andthen", a_my_index, __FUNCTION__, __LINE__);		\
-  case acurpc:								\
+  case anextstep:							\
     acall(f_status, 1, f);						\
     if ( f_status.notdone() ) return adel::ACONT
 
@@ -272,9 +274,9 @@ public:
  *  condition CANNOT be an adel function.
  */
 #define await( c )							\
-    my(pc) = acurpc;							\
+    adel_pc = anextstep;						\
     adel_debug("await", a_my_index, __FUNCTION__, __LINE__);		\
-  case acurpc:								\
+  case anextstep:							\
     if ( ! ( c ) ) return adel::ACONT
 
 /** aforatmost
@@ -289,17 +291,17 @@ public:
  *    }
  */
 #define aforatmost( t, f )						\
-    my(pc) = acurpc;							\
+    adel_pc = anextstep;						\
     ainit(achild(1));							\
-    my(wait) = millis() + t;						\
+    adel_wait = millis() + t;						\
     adel_debug("aforatmost", a_my_index, __FUNCTION__, __LINE__);	\
-  case acurpc:								\
+  case anextstep:							\
     acall(f_status, 1, f);						\
-    if (f_status.notdone() && millis() < my(wait)) return adel::ACONT;	\
-    my(condition) = f_status.done();					\
-    my(pc) = alaterpc(1);						\
-  case alaterpc(1):							\
-    if ( ! my(condition))
+    if (f_status.notdone() && millis() < adel_wait) return adel::ACONT;	\
+    adel_condition = f_status.done();					\
+    adel_pc = alaterstep(1);						\
+  case alaterstep(1):							\
+    if ( ! adel_condition)
     
 /** atogether
  *
@@ -308,11 +310,11 @@ public:
  *      atogether( flash_led(), play_sound() );
  */
 #define atogether( f , g )						\
-    my(pc) = acurpc;							\
+    adel_pc = anextstep;						\
     ainit(achild(1));							\
     ainit(achild(2));							\
     adel_debug("atogether", a_my_index, __FUNCTION__, __LINE__);	\
-  case acurpc:								\
+  case anextstep:							\
     acall(f_status, 1, f);						\
     acall(g_status, 2, g);						\
     if (f_status.notdone() || g_status.notdone()) return adel::ACONT;
@@ -323,11 +325,11 @@ public:
  */
 /*
 #define auntil( f , g )							\
-    my(pc) = acurpc;							\
+    adel_pc = anextstep;						\
     ainit(achild(1));							\
     ainit(achild(2));							\
     adel_debug("auntil", a_my_index, __FUNCTION__, __LINE__);		\
-  case acurpc:								\
+  case anextstep:								\
     acall(f_status, 1, f);						\
     acall(g_status, 2, g);						\
     if (f_status.notdone()) return adel::ACONT;
@@ -348,18 +350,18 @@ public:
  *     }
  */
 #define auntil( f , g )							\
-    my(pc) = acurpc;							\
+    adel_pc = anextstep;						\
     ainit(achild(1));							\
     ainit(achild(2));							\
     adel_debug("auntil", a_my_index, __FUNCTION__, __LINE__);		\
-  case acurpc:								\
+  case anextstep:							\
     acall(f_status, 1, f);						\
     acall(g_status, 2, g);						\
     if (f_status.notdone() && g_status.notdone()) return adel::ACONT;	\
-    my(condition) = f_status.done();					\
-    my(pc) = alaterpc(1);						\
-  case alaterpc(1):							\
-    if (my(condition))
+    adel_condition = f_status.done();					\
+    adel_pc = alaterstep(1);						\
+  case alaterstep(1):							\
+    if (adel_condition)
 
 /** alternate
  * 
@@ -369,24 +371,24 @@ public:
  *  where it left off. Continue until either one finishes.
  */
 #define alternate( f , g )						\
-    my(pc) = acurpc;							\
+    adel_pc = anextstep;						\
     ainit(achild(1));							\
     ainit(achild(2));							\
-    my(condition) = true;						\
+    adel_condition = true;						\
     adel_debug("alternate", a_my_index, __FUNCTION__, __LINE__);	\
-  case acurpc:								\
-    if (my(condition)) {							\
+  case anextstep:							\
+    if (adel_condition) {						\
       acall(f_status, 1, f);						\
       if (f_status.cont()) return adel::ACONT;				\
       if (f_status.yield()) {						\
-	my(condition) = false;						\
+	adel_condition = false;						\
         return adel::ACONT;						\
       }									\
     } else {								\
       acall(g_status, 2, g);						\
       if (g_status.cont()) return adel::ACONT;				\
       if (g_status.yield()) {						\
-        my(condition) = true;						\
+        adel_condition = true;						\
         return adel::ACONT;						\
       }									\
     }
@@ -397,11 +399,11 @@ public:
  *  function and start executing the other function.
  */
 #define ayourturn(v)							\
-    my(pc) = acurpc;							\
+    adel_pc = anextstep;						\
     acallerar->val = v;							\
     adel_debug("ayourturn", a_my_index, __FUNCTION__, __LINE__);	\
     return adel::AYIELD;						\
-  case acurpc: ;
+  case anextstep: ;
 
 /** amyturn
  *
@@ -415,7 +417,7 @@ public:
  *  caller that it is done.
  */
 #define afinish							\
-    my(pc) = ADEL_FINALLY;					\
+    adel_pc = ADEL_FINALLY;					\
     adel_debug("afinish", a_my_index, __FUNCTION__, __LINE__);	\
     return adel::ACONT;
 
