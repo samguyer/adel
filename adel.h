@@ -32,6 +32,7 @@ class AdelAR
  public:
   uint32_t val;
   uint16_t pc;
+  AdelAR() : val(0), pc(0) {}
 };
 
 /** LocalAdelAR
@@ -50,9 +51,7 @@ class LocalAdelAR : public AdelAR
 public:
   T run;
   
-  template<typename T2>
-    LocalAdelAR(T2 the_lambda) : run(the_lambda)
-  {}
+  LocalAdelAR(T the_lambda) : run(the_lambda) {}
 };
 
 class AdelRuntime
@@ -112,7 +111,10 @@ public:
 /** Initialize
  *  Set the "program counter" to zero.
  */
-#define ainit(c) { AdelAR * ar = AdelRuntime::curStack->stack[c]; if (ar) ar->pc = 0; }
+#define ainit(c) {				 \
+  AdelAR * ar = AdelRuntime::curStack->stack[c]; \
+  if (ar) delete ar;				 \
+  AdelRuntime::curStack->stack[c] = 0; }
 
 /** Parent activation record
  */
@@ -126,16 +128,16 @@ public:
   res = f;
 
 #ifdef ADEL_DEBUG
-#define adel_debug(m, index, func, line)	\
+#define adel_debug(m, index, line)		\
   Serial.print(m);				\
   Serial.print(" in ");				\
-  Serial.print(func);				\
+  Serial.print(afun);				\
   Serial.print("[");				\
   Serial.print(index);				\
   Serial.print("]:");				\
   Serial.println(line)
 #else
-#define adel_debug(m, index, func, pc)  ;
+#define adel_debug(m, index, pc)  ;
 #endif
 
 /** gensym
@@ -205,10 +207,12 @@ public:
  * and later copied into the LocalAdelAR. 
  */
 #define abegin								\
-  int a_my_index = AdelRuntime::curStack->current;			\
+  static const char * afun = __FUNCTION__;				\
+  uint32_t adel_ramp_start;							\
   uint32_t adel_wait;							\
   uint8_t  adel_condition;						\
   auto adel_body = [=](uint16_t& adel_pc) mutable {			\
+    int a_my_index = AdelRuntime::curStack->current;			\
     adel f_status, g_status;						\
     bool a_skipahead = false;						\
     switch (adel_pc) {							\
@@ -225,19 +229,20 @@ public:
 #define aend								\
         case ADEL_FINALLY: ;						\
       }									\
-      adel_debug("aend", a_my_index, __FUNCTION__, __LINE__);		\
+      adel_debug("aend", a_my_index, __LINE__);				\
       adel_pc = ADEL_FINALLY;						\
       return adel::ADONE;						\
     };									\
+  int a_my_index = AdelRuntime::curStack->current;			\
   AdelAR * a_ar = AdelRuntime::curStack->stack[a_my_index];		\
   LocalAdelAR<decltype(adel_body)> * a_this_ar = 0;			\
   if (a_ar == 0) {							\
-    adel_debug("abegin", a_my_index, __FUNCTION__, __LINE__);		\
     a_this_ar = new LocalAdelAR<decltype(adel_body)>(adel_body);	\
     AdelRuntime::curStack->stack[a_my_index] = a_this_ar;		\
   } else								\
     a_this_ar = (LocalAdelAR<decltype(adel_body)> *) a_ar;		\
-  adel result = a_this_ar->run(a_ar->pc);				\
+  if (a_this_ar->pc == 0) { adel_debug("abegin", a_my_index, __LINE__);	} \
+  adel result = a_this_ar->run(a_this_ar->pc);				\
   return result;
 
 // ------------------------------------------------------------
@@ -250,7 +255,7 @@ public:
 #define adelay(t)							\
     adel_pc = anextstep;						\
     adel_wait = millis() + t;						\
-    adel_debug("adelay", a_my_index, __FUNCTION__, __LINE__);		\
+    adel_debug("adelay", a_my_index, __LINE__);				\
  case anextstep:							\
     if (millis() < adel_wait) return adel::ACONT;
 
@@ -264,7 +269,7 @@ public:
 #define andthen( f )							\
     adel_pc = anextstep;						\
     ainit(achild(1));							\
-    adel_debug("andthen", a_my_index, __FUNCTION__, __LINE__);		\
+    adel_debug("andthen", a_my_index, __LINE__);			\
   case anextstep:							\
     acall(f_status, 1, f);						\
     if ( f_status.notdone() ) return adel::ACONT
@@ -275,7 +280,7 @@ public:
  */
 #define await( c )							\
     adel_pc = anextstep;						\
-    adel_debug("await", a_my_index, __FUNCTION__, __LINE__);		\
+    adel_debug("await", a_my_index, __LINE__);				\
   case anextstep:							\
     if ( ! ( c ) ) return adel::ACONT
 
@@ -294,7 +299,7 @@ public:
     adel_pc = anextstep;						\
     ainit(achild(1));							\
     adel_wait = millis() + t;						\
-    adel_debug("aforatmost", a_my_index, __FUNCTION__, __LINE__);	\
+    adel_debug("aforatmost", a_my_index, __LINE__);			\
   case anextstep:							\
     acall(f_status, 1, f);						\
     if (f_status.notdone() && millis() < adel_wait) return adel::ACONT;	\
@@ -313,7 +318,7 @@ public:
     adel_pc = anextstep;						\
     ainit(achild(1));							\
     ainit(achild(2));							\
-    adel_debug("atogether", a_my_index, __FUNCTION__, __LINE__);	\
+    adel_debug("atogether", a_my_index, __LINE__);			\
   case anextstep:							\
     acall(f_status, 1, f);						\
     acall(g_status, 2, g);						\
@@ -328,7 +333,7 @@ public:
     adel_pc = anextstep;						\
     ainit(achild(1));							\
     ainit(achild(2));							\
-    adel_debug("auntil", a_my_index, __FUNCTION__, __LINE__);		\
+    adel_debug("auntil", a_my_index, __LINE__);		\
   case anextstep:								\
     acall(f_status, 1, f);						\
     acall(g_status, 2, g);						\
@@ -353,7 +358,7 @@ public:
     adel_pc = anextstep;						\
     ainit(achild(1));							\
     ainit(achild(2));							\
-    adel_debug("auntil", a_my_index, __FUNCTION__, __LINE__);		\
+    adel_debug("auntil", a_my_index, __LINE__);				\
   case anextstep:							\
     acall(f_status, 1, f);						\
     acall(g_status, 2, g);						\
@@ -362,6 +367,18 @@ public:
     adel_pc = alaterstep(1);						\
   case alaterstep(1):							\
     if (adel_condition)
+
+/** ramp
+ *
+ *  */
+#define aramp( T, v, start, end)					\
+    adel_pc = anextstep;						\
+    adel_ramp_start = millis();						\ 
+    adel_debug("aramp", a_my_index, __LINE__);				\
+ case anextstep:							\
+    while ((millis() <= (adel_ramp_start + T)) &&			\
+           ((v = map(millis(), adel_ramp_start, adel_ramp_start + T, start, end)) == v) && \
+           (adel_pc = anextstep))
 
 /** alternate
  * 
@@ -375,7 +392,7 @@ public:
     ainit(achild(1));							\
     ainit(achild(2));							\
     adel_condition = true;						\
-    adel_debug("alternate", a_my_index, __FUNCTION__, __LINE__);	\
+    adel_debug("alternate", a_my_index, __LINE__);			\
   case anextstep:							\
     if (adel_condition) {						\
       acall(f_status, 1, f);						\
@@ -401,7 +418,7 @@ public:
 #define ayourturn(v)							\
     adel_pc = anextstep;						\
     acallerar->val = v;							\
-    adel_debug("ayourturn", a_my_index, __FUNCTION__, __LINE__);	\
+    adel_debug("ayourturn", a_my_index, __LINE__);			\
     return adel::AYIELD;						\
   case anextstep: ;
 
@@ -418,7 +435,7 @@ public:
  */
 #define afinish							\
     adel_pc = ADEL_FINALLY;					\
-    adel_debug("afinish", a_my_index, __FUNCTION__, __LINE__);	\
+    adel_debug("afinish", a_my_index, __LINE__);		\
     return adel::ACONT;
 
 #endif
