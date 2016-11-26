@@ -208,11 +208,10 @@ public:
  */
 #define abegin								\
   static const char * afun = __FUNCTION__;				\
-  uint32_t adel_ramp_start;							\
+  uint32_t adel_ramp_start;						\
   uint32_t adel_wait;							\
   uint8_t  adel_condition;						\
-  auto adel_body = [=](uint16_t& adel_pc) mutable {			\
-    int a_my_index = AdelRuntime::curStack->current;			\
+  auto adel_body = [=](uint16_t& adel_pc, int a_my_index) mutable {	\
     adel f_status, g_status;						\
     bool a_skipahead = false;						\
     switch (adel_pc) {							\
@@ -242,7 +241,7 @@ public:
   } else								\
     a_this_ar = (LocalAdelAR<decltype(adel_body)> *) a_ar;		\
   if (a_this_ar->pc == 0) { adel_debug("abegin", a_my_index, __LINE__);	} \
-  adel result = a_this_ar->run(a_this_ar->pc);				\
+  adel result = a_this_ar->run(a_this_ar->pc, a_my_index);		\
   return result;
 
 // ------------------------------------------------------------
