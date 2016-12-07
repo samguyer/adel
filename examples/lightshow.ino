@@ -23,9 +23,7 @@ void setup()
 
 adel getUserInput(char buffer[], uint8_t maxSize)
 {
-  avars {
-    uint8_t count;
-  }
+  uint8_t count;
   
   abegin:
   // -- Wait for serial data  
@@ -33,11 +31,11 @@ adel getUserInput(char buffer[], uint8_t maxSize)
 
   // -- Fill the buffer
   memset(buffer, 0, maxSize);
-  my(count) = 0;
+  count = 0;
   do {
-    my(count) += Serial.readBytes(buffer+my(count), maxSize);
+    count += Serial.readBytes(buffer+count, maxSize);
     adelay(10);
-  } while( (my(count) < maxSize) && !(Serial.available() == 0) );
+  } while( (count < maxSize) && !(Serial.available() == 0) );
 
   aend;
 }
@@ -56,15 +54,13 @@ adel blink(int pin, int interval)
 
 adel oscillate(int pin)
 {
-  avars {
-    long int start_time;
-  }
+  long int start_time;
   
   abegin:
-  my(start_time) = millis();
+  start_time = millis();
   while (1) {
     {
-      double d = (double) (millis() - my(start_time));
+      double d = (double) (millis() - start_time);
       double b = (1.0 - cos(d/200.0)) * 127.0;
       analogWrite(pin, b);
     }
@@ -98,25 +94,24 @@ char command[BUFSIZE+1];
 
 adel runshow()
 {
-  avars {
-    int mode;
-  }
+  int mode;
   abegin:
-  my(mode) = 0;
+  
+  mode = 0;
 
   while(1) {
-    auntil( getUserInput(command, BUFSIZE), lightshow(my(mode)) );
+    auntil( getUserInput(command, BUFSIZE), lightshow(mode) );
     if (strcmp(command, "stop") == 0) {
-      my(mode) = 0;
+      mode = 0;
     }
     if (strcmp(command, "fast") == 0) {
-      my(mode) = 1;
+      mode = 1;
     }
     if (strcmp(command, "slow") == 0) {
-      my(mode) = 2;
+      mode = 2;
     }
     if (strcmp(command, "pulse") == 0) {
-      my(mode) = 3;
+      mode = 3;
     }
   }
 

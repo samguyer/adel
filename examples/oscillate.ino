@@ -17,15 +17,13 @@ void setup()
  */
 adel oscillate(int pin)
 {
-  avars {
-    long int start_time;
-  }
+  long int start_time;
   
   abegin:
-  my(start_time) = millis();
+  start_time = millis();
   while (1) {
     {
-      double d = (double) (millis() - my(start_time));
+      double d = (double) (millis() - start_time);
       double b = (1.0 - cos(d/200.0)) * 127.0;
       analogWrite(pin, b);
     }
