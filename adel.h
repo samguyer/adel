@@ -81,7 +81,7 @@ public:
  *  All Adel functions return an enum that indicates whether the routine is
  *  done or has more work to do.
  */
-class adel
+class astatus
 {
 public:
   typedef enum { ANONE, ADONE, ACONT, AYIELD } _status;
@@ -90,10 +90,10 @@ private:
   _status m_status;
 
 public:
-  adel(_status s) : m_status(s) {}
-  adel() : m_status(ANONE) {}
-  adel(const adel& other) : m_status(other.m_status) {}
-  explicit adel(bool b) : m_status(ANONE) {}
+  astatus(_status s) : m_status(s) {}
+  astatus() : m_status(ANONE) {}
+  astatus(const astatus& other) : m_status(other.m_status) {}
+  // explicit astatus(bool b) : m_status(ANONE) {}
   
   bool done() const { return m_status == ADONE; }
   bool cont() const { return m_status == ACONT; }
@@ -181,7 +181,7 @@ public:
   static AdelRuntime agensym(aruntime, __LINE__);			\
   AdelRuntime::curStack = & agensym(aruntime, __LINE__);		\
   AdelRuntime::curStack->current = 0;					\
-  adel agensym(f_status, __LINE__) = f;					\
+  astatus agensym(f_status, __LINE__) = f;					\
   if (agensym(f_status, __LINE__).done()) { ainit(0); }
 
 /** aevery
@@ -193,12 +193,30 @@ public:
   AdelRuntime::curStack = & agensym(aruntime, __LINE__);		\
   static uint32_t agensym(anexttime,__LINE__) = millis() + T;		\
   AdelRuntime::curStack->current = 0;					\
-  adel agensym(f_status, __LINE__) = f;					\
+  astatus agensym(f_status, __LINE__) = f;					\
   if (agensym(f_status, __LINE__).done() && agensym(anexttime,__LINE__) < millis()) {	\
     ainit(0); }
 
 // ------------------------------------------------------------
 //   Function prologue and epilogue
+
+/** adel 
+ *
+ * Every Adel function must be declared with "adel" as the return type.
+ * Here is the general form of an Adel function:
+ *
+ *     adel blinkylights(int pin)
+ *     {
+ *       abegin:
+ *       ...
+ *       aend;
+ *     }
+ *
+ *  The definition of this macro ensures that users don't forget to
+ *  call Adel functions inside a concurrency primitive, even if it
+ *  is just "andthen".
+ */
+#define adel astatus __attribute__((warn_unused_result)) 
 
 /** abegin
  *
@@ -208,11 +226,11 @@ public:
  */
 #define abegin								\
   static const char * afun = __FUNCTION__;				\
-  uint32_t adel_ramp_start;						\
-  uint32_t adel_wait;							\
-  uint8_t  adel_condition;						\
+  uint32_t adel_ramp_start = 0;						\
+  uint32_t adel_wait = 0;						\
+  uint8_t  adel_condition = 0;						\
   auto adel_body = [=](uint16_t& adel_pc, int a_my_index) mutable {	\
-    adel f_status, g_status;						\
+    astatus f_status, g_status;						\
     bool a_skipahead = false;						\
     switch (adel_pc) {							\
    case 0
@@ -230,7 +248,7 @@ public:
       }									\
       adel_debug("aend", a_my_index, __LINE__);				\
       adel_pc = ADEL_FINALLY;						\
-      return adel::ADONE;						\
+      return astatus::ADONE;						\
     };									\
   int a_my_index = AdelRuntime::curStack->current;			\
   AdelAR * a_ar = AdelRuntime::curStack->stack[a_my_index];		\
@@ -241,7 +259,7 @@ public:
   } else								\
     a_this_ar = (LocalAdelAR<decltype(adel_body)> *) a_ar;		\
   if (a_this_ar->pc == 0) { adel_debug("abegin", a_my_index, __LINE__);	} \
-  adel result = a_this_ar->run(a_this_ar->pc, a_my_index);		\
+  astatus result = a_this_ar->run(a_this_ar->pc, a_my_index);		\
   return result;
 
 // ------------------------------------------------------------
@@ -256,7 +274,7 @@ public:
     adel_wait = millis() + t;						\
     adel_debug("adelay", a_my_index, __LINE__);				\
  case anextstep:							\
-    if (millis() < adel_wait) return adel::ACONT;
+    if (millis() < adel_wait) return astatus::ACONT;
 
 /** andthen
  *
@@ -271,7 +289,7 @@ public:
     adel_debug("andthen", a_my_index, __LINE__);			\
   case anextstep:							\
     acall(f_status, 1, f);						\
-    if ( f_status.notdone() ) return adel::ACONT
+    if ( f_status.notdone() ) return astatus::ACONT
 
 /** await
  *  Wait asynchronously for a condition to become true. Note that this
@@ -281,7 +299,7 @@ public:
     adel_pc = anextstep;						\
     adel_debug("await", a_my_index, __LINE__);				\
   case anextstep:							\
-    if ( ! ( c ) ) return adel::ACONT
+    if ( ! ( c ) ) return astatus::ACONT
 
 /** aforatmost
  *
@@ -301,7 +319,7 @@ public:
     adel_debug("aforatmost", a_my_index, __LINE__);			\
   case anextstep:							\
     acall(f_status, 1, f);						\
-    if (f_status.notdone() && millis() < adel_wait) return adel::ACONT;	\
+    if (f_status.notdone() && millis() < adel_wait) return astatus::ACONT;	\
     adel_condition = f_status.done();					\
     adel_pc = alaterstep(1);						\
   case alaterstep(1):							\
@@ -321,7 +339,7 @@ public:
   case anextstep:							\
     acall(f_status, 1, f);						\
     acall(g_status, 2, g);						\
-    if (f_status.notdone() || g_status.notdone()) return adel::ACONT;
+    if (f_status.notdone() || g_status.notdone()) return astatus::ACONT;
 
 /** OLD auntil
  *
@@ -336,7 +354,7 @@ public:
   case anextstep:								\
     acall(f_status, 1, f);						\
     acall(g_status, 2, g);						\
-    if (f_status.notdone()) return adel::ACONT;
+    if (f_status.notdone()) return astatus::ACONT;
 */
 
 /** auntil
@@ -361,7 +379,7 @@ public:
   case anextstep:							\
     acall(f_status, 1, f);						\
     acall(g_status, 2, g);						\
-    if (f_status.notdone() && g_status.notdone()) return adel::ACONT;	\
+    if (f_status.notdone() && g_status.notdone()) return astatus::ACONT;	\
     adel_condition = f_status.done();					\
     adel_pc = alaterstep(1);						\
   case alaterstep(1):							\
@@ -384,7 +402,7 @@ public:
  */
 #define aramp( T, v, start, end)					\
     adel_pc = anextstep;						\
-    adel_ramp_start = millis();						\ 
+    adel_ramp_start = millis();						\
     adel_debug("aramp", a_my_index, __LINE__);				\
  case anextstep:							\
     while ((millis() <= (adel_ramp_start + T)) &&			\
@@ -407,17 +425,17 @@ public:
   case anextstep:							\
     if (adel_condition) {						\
       acall(f_status, 1, f);						\
-      if (f_status.cont()) return adel::ACONT;				\
+      if (f_status.cont()) return astatus::ACONT;				\
       if (f_status.yield()) {						\
 	adel_condition = false;						\
-        return adel::ACONT;						\
+        return astatus::ACONT;						\
       }									\
     } else {								\
       acall(g_status, 2, g);						\
-      if (g_status.cont()) return adel::ACONT;				\
+      if (g_status.cont()) return astatus::ACONT;				\
       if (g_status.yield()) {						\
         adel_condition = true;						\
-        return adel::ACONT;						\
+        return astatus::ACONT;						\
       }									\
     }
 
@@ -430,7 +448,7 @@ public:
     adel_pc = anextstep;						\
     acallerar->val = v;							\
     adel_debug("ayourturn", a_my_index, __LINE__);			\
-    return adel::AYIELD;						\
+    return astatus::AYIELD;						\
   case anextstep: ;
 
 /** amyturn
@@ -447,6 +465,6 @@ public:
 #define afinish							\
     adel_pc = ADEL_FINALLY;					\
     adel_debug("afinish", a_my_index, __LINE__);		\
-    return adel::ACONT;
+    return astatus::ACONT;
 
 #endif
