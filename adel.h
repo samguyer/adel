@@ -369,7 +369,19 @@ public:
 
 /** ramp
  *
- *  */
+ *  Execute execute the body for T milliseconds; each time it is executed,
+ *  v will be set to a value between min and max proportional to the
+ *  fraction of T that has elapsed. Useful for turning something on or off
+ *  over a specific period of time. Used as a control structure:
+ *
+ *       aramp(1000, v, 0, 255) {
+ *         analogWrite(pin, v);
+ *         adelay(50);
+ *       }
+ *
+ *  NOTE: Make sure there is some adelay or other async function inside
+ *        the loop body.
+ */
 #define aramp( T, v, start, end)					\
     adel_pc = anextstep;						\
     adel_ramp_start = millis();						\ 
