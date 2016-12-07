@@ -62,6 +62,7 @@ Concurrency in Adel is specified at the function granularity, using a fork-join 
 * `aforatmost( T, f )` : run Adel function `f` until it completes, or T milliseconds (whichever comes first)
 * `atogether( f , g )` : run Adel functions `f` and `g` concurrently until they **both** finish.
 * `auntil( f , g ) { ... } else { ... }` : run Adel functions `f` and `g` concurrently until **one** of them finishes. Executes the true branch if `f` finishes first or the false branch if `g` finishes first.
+* `aramp( T, v, min, max) { ... }` : execute the body for T milliseconds; each time it is executed, v will be set to a value between min and max proportional to the fraction of T that has elapsed. Useful for turning something on or off over a specific period of time.
 * `afinish` : finish executing the current function (like a return)
 * `alternate( f , g )` : run `f` continuously until it yields by calling `ayourturn`; then run `g` until it yields. Continue back and forth until either function completes.
 * `ayourturn( v )` : use in a function being called by `alternate` to yield control to the other function. The value `v` is made available to the other function.
