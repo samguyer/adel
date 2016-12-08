@@ -292,6 +292,14 @@ void loop()
   aevery( 500, checkforinput() );
 }
 ```
+## Debugging
+
+In general, debugging microcontroller programs is tough. Adel offers some help in the form of a debug mode that prints the names of the Adel functions being executed to the serial interface. To enable debugging mode, add the following line *before* the include of `adel.h`:
+
+```{c++}
+#define ADEL_DEBUG 1
+#include <adel.h>
+````
 
 ## WARNINGS
 
