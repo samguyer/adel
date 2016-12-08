@@ -93,7 +93,6 @@ public:
   astatus(_status s) : m_status(s) {}
   astatus() : m_status(ANONE) {}
   astatus(const astatus& other) : m_status(other.m_status) {}
-  // explicit astatus(bool b) : m_status(ANONE) {}
   
   bool done() const { return m_status == ADONE; }
   bool cont() const { return m_status == ACONT; }
@@ -181,7 +180,7 @@ public:
   static AdelRuntime agensym(aruntime, __LINE__);			\
   AdelRuntime::curStack = & agensym(aruntime, __LINE__);		\
   AdelRuntime::curStack->current = 0;					\
-  astatus agensym(f_status, __LINE__) = f;					\
+  astatus agensym(f_status, __LINE__) = f;				\
   if (agensym(f_status, __LINE__).done()) { ainit(0); }
 
 /** aevery
@@ -193,8 +192,9 @@ public:
   AdelRuntime::curStack = & agensym(aruntime, __LINE__);		\
   static uint32_t agensym(anexttime,__LINE__) = millis() + T;		\
   AdelRuntime::curStack->current = 0;					\
-  astatus agensym(f_status, __LINE__) = f;					\
-  if (agensym(f_status, __LINE__).done() && agensym(anexttime,__LINE__) < millis()) {	\
+  astatus agensym(f_status, __LINE__) = f;				\
+  if (agensym(f_status, __LINE__).done() &&				\
+      agensym(anexttime,__LINE__) < millis()) {				\
     ainit(0); }
 
 // ------------------------------------------------------------
@@ -319,7 +319,9 @@ public:
     adel_debug("aforatmost", a_my_index, __LINE__);			\
   case anextstep:							\
     acall(f_status, 1, f);						\
-    if (f_status.notdone() && millis() < adel_wait) return astatus::ACONT;	\
+    if (f_status.notdone() &&						\
+	millis() < adel_wait)						\
+      return astatus::ACONT;						\
     adel_condition = f_status.done();					\
     adel_pc = alaterstep(1);						\
   case alaterstep(1):							\
@@ -339,23 +341,8 @@ public:
   case anextstep:							\
     acall(f_status, 1, f);						\
     acall(g_status, 2, g);						\
-    if (f_status.notdone() || g_status.notdone()) return astatus::ACONT;
-
-/** OLD auntil
- *
- *  Semantics: execute g until f completes.
- */
-/*
-#define auntil( f , g )							\
-    adel_pc = anextstep;						\
-    ainit(achild(1));							\
-    ainit(achild(2));							\
-    adel_debug("auntil", a_my_index, __LINE__);		\
-  case anextstep:								\
-    acall(f_status, 1, f);						\
-    acall(g_status, 2, g);						\
-    if (f_status.notdone()) return astatus::ACONT;
-*/
+    if (f_status.notdone() || g_status.notdone())			\
+      return astatus::ACONT;
 
 /** auntil
  *
@@ -379,7 +366,8 @@ public:
   case anextstep:							\
     acall(f_status, 1, f);						\
     acall(g_status, 2, g);						\
-    if (f_status.notdone() && g_status.notdone()) return astatus::ACONT;	\
+    if (f_status.notdone() && g_status.notdone())			\
+      return astatus::ACONT;						\
     adel_condition = f_status.done();					\
     adel_pc = alaterstep(1);						\
   case alaterstep(1):							\
@@ -425,14 +413,14 @@ public:
   case anextstep:							\
     if (adel_condition) {						\
       acall(f_status, 1, f);						\
-      if (f_status.cont()) return astatus::ACONT;				\
+      if (f_status.cont()) return astatus::ACONT;			\
       if (f_status.yield()) {						\
 	adel_condition = false;						\
         return astatus::ACONT;						\
       }									\
     } else {								\
       acall(g_status, 2, g);						\
-      if (g_status.cont()) return astatus::ACONT;				\
+      if (g_status.cont()) return astatus::ACONT;			\
       if (g_status.yield()) {						\
         adel_condition = true;						\
         return astatus::ACONT;						\
