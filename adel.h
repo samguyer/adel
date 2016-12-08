@@ -232,6 +232,7 @@ public:
   auto adel_body = [=](uint16_t& adel_pc, int a_my_index) mutable {	\
     astatus f_status, g_status;						\
     bool a_skipahead = false;						\
+    if (adel_pc == 0) { adel_debug("abegin", a_my_index, __LINE__);}	\
     switch (adel_pc) {							\
    case 0
 
@@ -258,7 +259,6 @@ public:
     AdelRuntime::curStack->stack[a_my_index] = a_this_ar;		\
   } else								\
     a_this_ar = (LocalAdelAR<decltype(adel_body)> *) a_ar;		\
-  if (a_this_ar->pc == 0) { adel_debug("abegin", a_my_index, __LINE__);	} \
   astatus result = a_this_ar->run(a_this_ar->pc, a_my_index);		\
   return result;
 
