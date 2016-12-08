@@ -9,7 +9,7 @@
 /** Adel runtime
  *
  *  Stack of function states. Since Adel is emulating concurrency, the
- *  stack is not a linear data structure, but a tree of currently running
+ *  stack is not a linear data structure, but a tree of actively running
  *  functions. My implementation limits the tree to a binary tree, so
  *  that we can use a heap representation. This restriction means that any
  *  given function can only spawn two concurrent functions at any given
