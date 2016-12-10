@@ -54,6 +54,13 @@ public:
   LocalAdelAR(T the_lambda) : run(the_lambda) {}
 };
 
+/** Runtime stack
+ *
+ * This class encapsulates a single control stack. The top-level macros,
+ * such as aonce and arepeat, each create a separate instance of this
+ * class to hold their activation records. The stack is implemented as
+ * a binary heap, so that finding the children of a function is fast.
+ */
 class AdelRuntime
 {
 public:
