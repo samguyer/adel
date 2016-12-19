@@ -3,90 +3,24 @@
 #include <string.h>
 #include <Arduino.h>
 
-#ifndef ADEL_V3
-#define ADEL_V3
+#ifndef ADEL_V4
+#define ADEL_V4
 
 /** Adel runtime
  *
  *  Stack of function states. Since Adel is emulating concurrency, the
  *  stack is not a linear data structure, but a tree of actively running
- *  functions. My implementation limits the tree to a binary tree, so
- *  that we can use a heap representation. This restriction means that any
- *  given function can only spawn two concurrent functions at any given
- *  time. 
+ *  functions. 
 */
 
 #define ADEL_FINALLY 0xFFFF
 
-#ifndef ADEL_STACK_DEPTH
-#define ADEL_STACK_DEPTH 5
-#endif
-
-/** Adel activation record
- *
- *  Minimum activation record includes the "program counter" for this
- *  function, and the next wait time (for adelay).
- */
-class AdelAR
-{
- public:
-  uint32_t val;
-  uint16_t pc;
-  AdelAR() : val(0), pc(0) {}
-};
-
-/** LocalAdelAR
- *
- *  This class is the key to supporting local variables in a natural
- *  way. The activation record for each Adel function is initialized with a
- *  lambda that captures the local variables declared above it, creating
- *  the effect of local variables that persist as the function makes progress.
- *
- *  All the templating is necessary to get around the fact that C++11/14 do
- *  not allow you to declare the type of a lambda.
- */
-template<typename T>
-class LocalAdelAR : public AdelAR
-{
-public:
-  T run;
-  
-  LocalAdelAR(T the_lambda) : run(the_lambda) {}
-};
-
-/** Runtime stack
- *
- * This class encapsulates a single control stack. The top-level macros,
- * such as aonce and arepeat, each create a separate instance of this
- * class to hold their activation records. The stack is implemented as
- * a binary heap, so that finding the children of a function is fast.
- */
-class AdelRuntime
-{
-public:
-
-  // -- Pointer to the current runtime object
-  static AdelRuntime * curStack;
-  
-  // -- Stack: pointers to activation records indexed by "current"
-  AdelAR * stack[1 << ADEL_STACK_DEPTH];
-
-  // -- Current function (index into stack)
-  int current;
-
-  // -- Constructor: set everything to null
-  AdelRuntime() : current(0)
-  {
-    for (int i = 0; i < (1 << ADEL_STACK_DEPTH); i++) {
-      stack[i] = 0;
-    }
-  }
-};
-
 /** adel status
  * 
  *  All Adel functions return an enum that indicates whether the routine is
- *  done or has more work to do.
+ *  done or has more work to do. The various concurrency constructs use
+ *  this result to decide whether to continue executing the function, or
+ *  move on to the next step.
  */
 class astatus
 {
@@ -107,43 +41,126 @@ public:
   bool notdone() const { return m_status == ACONT || m_status == AYIELD; }
 };
 
+/** Adel activation record
+ *
+ *  The base class for all activation records. All other information --
+ *  including the code to run -- is bound up in the closure stored in each
+ *  subclass.
+ */
+class AdelAR
+{
+private:
+  AdelAR * children[3];
+  uint32_t val;
+
+public:
+  AdelAR()
+    : val(0)
+  {
+    children[0] = 0;
+    children[1] = 0;
+    children[2] = 0;
+  }
+
+  inline void clear(int i) {
+    if (children[i]) {
+      delete children[i];
+      children[i] = 0;
+    }
+  }
+  
+  inline void init(int i, AdelAR * ar) {
+    clear(i);
+    children[i] = ar;
+  }
+
+  virtual astatus run() = 0;
+
+  inline astatus runchild(int i) const { return children[i]->run(); }
+
+  ~AdelAR() {
+    clear(0);
+    clear(1);
+    clear(2);
+  }
+};
+
+/** LocalAdelAR
+ *
+ *  This class is the key to supporting local variables in a natural
+ *  way. The activation record for each Adel function is initialized with a
+ *  lambda that captures the local variables declared above it, including
+ *  the arguments to the function, creating the effect of local variables
+ *  that persist as the function makes progress.
+ *
+ *  The templating is necessary to get around the fact that C++11/14 do not
+ *  allow you to declare the type of a lambda.
+ */
+template<typename T>
+class LocalAdelAR : public AdelAR
+{
+public:
+  T body;
+  
+ LocalAdelAR(const T& the_lambda)
+   : AdelAR(),
+     body(the_lambda)
+  {}
+
+  virtual astatus run() {
+    return body(this);
+  }
+};
+
+/** Runtime stack
+ *
+ * This class encapsulates a single control stack. The top-level macros,
+ * such as aonce and arepeat, each create a separate instance of this class
+ * to hold their activation records. Activation records are structured as a
+ * tree. Each pass over the currently active functions starts with a call
+ * to run() on the root.
+ */
+class AdelRuntime
+{
+public:
+
+  // -- Pointer to the current runtime object
+  static AdelRuntime * curStack;
+
+private:
+  AdelAR * root;
+
+public:
+  AdelRuntime()
+    : root(0)
+  {}
+
+  inline bool not_running() const { return root == 0; }
+  
+  inline void init(AdelAR * ar) { root = ar; }
+
+  inline astatus run() { return root->run(); }
+
+  inline void reset() {
+    if (root) {
+      delete root;
+      root = 0;
+    }
+  }
+};
+
 // ------------------------------------------------------------
 //   Internal macros
 
-/** Child function index
- *  Using the heap structure, this is really fast. */
-#define achild(c) ((a_my_index << 1) + c)
-
-/** Initialize
- *  Set the "program counter" to zero.
- */
-#define ainit(c) {				 \
-  AdelAR * ar = AdelRuntime::curStack->stack[c]; \
-  if (ar) delete ar;				 \
-  AdelRuntime::curStack->stack[c] = 0; }
-
-/** Parent activation record
- */
-#define acallerar AdelRuntime::curStack->stack[(a_my_index-1) >> 1]
-
-/** acall(res, c, f)
- *
- * Call an Adel function f and capture the result status. */
-#define acall(res, c, f)			\
-  AdelRuntime::curStack->current = achild(c);	\
-  res = f;
-
 #ifdef ADEL_DEBUG
-#define adel_debug(m, index, line)		\
+#define adel_debug(m, line)			\
   Serial.print(m);				\
   Serial.print(" in ");				\
-  Serial.print(afun);				\
-  Serial.print("[");				\
-  Serial.print(index);				\
-  Serial.print("]:");				\
+  Serial.print(a_fun_name);			\
+  Serial.print(":");				\
   Serial.println(line)
 #else
-#define adel_debug(m, index, pc)  ;
+#define adel_debug(m, line)  ;
 #endif
 
 /** gensym
@@ -170,14 +187,14 @@ public:
 
 /** aonce
  *
- *  Use astart in the Arduino loop function to initiate the Adel function f
- *  (and run all Adel functions below it).
+ *  Run an adel function from the top one time. Once complete, .
  */
 #define aonce( f )							\
   static AdelRuntime agensym(aruntime, __LINE__);			\
   AdelRuntime::curStack = & agensym(aruntime, __LINE__);		\
-  AdelRuntime::curStack->current = 0;					\
-  f;
+  if (AdelRuntime::curStack->not_running())				\
+     AdelRuntime::curStack->init( f );					\
+  AdelRuntime::curStack->run();
 
 /** aforever
  *
@@ -186,9 +203,12 @@ public:
 #define arepeat( f )							\
   static AdelRuntime agensym(aruntime, __LINE__);			\
   AdelRuntime::curStack = & agensym(aruntime, __LINE__);		\
-  AdelRuntime::curStack->current = 0;					\
-  astatus agensym(f_status, __LINE__) = f;				\
-  if (agensym(f_status, __LINE__).done()) { ainit(0); }
+  if ( AdelRuntime::curStack->not_running())				\
+    AdelRuntime::curStack->init( f );					\
+  astatus agensym(f_status, __LINE__) = AdelRuntime::curStack->run();	\
+  if (agensym(f_status, __LINE__).done()) {				\
+    AdelRuntime::curStack->reset();					\
+  }
 
 /** aevery
  *  
@@ -198,11 +218,13 @@ public:
   static AdelRuntime agensym(aruntime, __LINE__);			\
   AdelRuntime::curStack = & agensym(aruntime, __LINE__);		\
   static uint32_t agensym(anexttime,__LINE__) = millis() + T;		\
-  AdelRuntime::curStack->current = 0;					\
-  astatus agensym(f_status, __LINE__) = f;				\
+  if ( AdelRuntime::curStack->not_running())				\
+    AdelRuntime::curStack->init( f );					\
+  astatus agensym(f_status, __LINE__) = AdelRuntime::curStack->run();	\
   if (agensym(f_status, __LINE__).done() &&				\
       agensym(anexttime,__LINE__) < millis()) {				\
-    ainit(0); }
+    AdelRuntime::curStack->reset();					\
+  }
 
 // ------------------------------------------------------------
 //   Function prologue and epilogue
@@ -223,7 +245,7 @@ public:
  *  call Adel functions inside a concurrency primitive, even if it
  *  is just "andthen".
  */
-#define adel astatus __attribute__((warn_unused_result)) 
+#define adel AdelAR * __attribute__((warn_unused_result)) 
 
 /** abegin
  *
@@ -232,42 +254,36 @@ public:
  * and later copied into the LocalAdelAR. 
  */
 #define abegin								\
-  static const char * afun = __FUNCTION__;				\
+  const char * a_fun_name = __FUNCTION__;				\
+  /* -- These variables become the persistent state in the closure */	\
+  uint16_t adel_pc = 0;							\
   uint32_t adel_ramp_start = 0;						\
   uint32_t adel_wait = 0;						\
   uint8_t  adel_condition = 0;						\
-  auto adel_body = [=](uint16_t& adel_pc, int a_my_index) mutable {	\
+  /* -- Start the lambda -- the body of the function */			\
+  auto adel_body = [=](AdelAR * a_ar) mutable {				\
     astatus f_status, g_status;						\
     bool a_skipahead = false;						\
-    if (adel_pc == 0) { adel_debug("abegin", a_my_index, __LINE__);}	\
+    if (adel_pc == 0) { adel_debug("abegin", __LINE__);}		\
     switch (adel_pc) {							\
    case 0
 
 /** aend
  *
- * Must be the last thing in the Adel function. This macro first wraps up
- * the big switch statement and closes the lambda. Then it drops back into
- * the code that it executed every time through the function. First, check
- * to see if the activation record needs to be initialized, then invoke the
- * lambda.
  */
 #define aend								\
         case ADEL_FINALLY: ;						\
       }									\
-      adel_debug("aend", a_my_index, __LINE__);				\
+      adel_debug("aend", __LINE__);					\
       adel_pc = ADEL_FINALLY;						\
       return astatus::ADONE;						\
     };									\
-  int a_my_index = AdelRuntime::curStack->current;			\
-  AdelAR * a_ar = AdelRuntime::curStack->stack[a_my_index];		\
   LocalAdelAR<decltype(adel_body)> * a_this_ar = 0;			\
-  if (a_ar == 0) {							\
-    a_this_ar = new LocalAdelAR<decltype(adel_body)>(adel_body);	\
-    AdelRuntime::curStack->stack[a_my_index] = a_this_ar;		\
-  } else								\
-    a_this_ar = (LocalAdelAR<decltype(adel_body)> *) a_ar;		\
-  astatus result = a_this_ar->run(a_this_ar->pc, a_my_index);		\
-  return result;
+  a_this_ar = new LocalAdelAR<decltype(adel_body)>(adel_body);		\
+  Serial.print(a_fun_name); \
+  Serial.print(" @ "); \
+  Serial.println((int) a_this_ar, HEX); \
+  return a_this_ar;
 
 // ------------------------------------------------------------
 //   General Adel functions
@@ -279,7 +295,7 @@ public:
 #define adelay(t)							\
     adel_pc = anextstep;						\
     adel_wait = millis() + t;						\
-    adel_debug("adelay", a_my_index, __LINE__);				\
+    adel_debug("adelay", __LINE__);					\
  case anextstep:							\
     if (millis() < adel_wait) return astatus::ACONT;
 
@@ -292,11 +308,12 @@ public:
  */
 #define andthen( f )							\
     adel_pc = anextstep;						\
-    ainit(achild(1));							\
-    adel_debug("andthen", a_my_index, __LINE__);			\
+    a_ar->init(0, f );							\
+    adel_debug("andthen", __LINE__);					\
   case anextstep:							\
-    acall(f_status, 1, f);						\
-    if ( f_status.notdone() ) return astatus::ACONT
+    f_status = a_ar->runchild(0);					\
+    if ( f_status.notdone() ) return astatus::ACONT;			\
+    a_ar->clear(0);
 
 /** await
  *  Wait asynchronously for a condition to become true. Note that this
@@ -304,7 +321,7 @@ public:
  */
 #define await( c )							\
     adel_pc = anextstep;						\
-    adel_debug("await", a_my_index, __LINE__);				\
+    adel_debug("await", __LINE__);					\
   case anextstep:							\
     if ( ! ( c ) ) return astatus::ACONT
 
@@ -321,14 +338,14 @@ public:
  */
 #define aforatmost( t, f )						\
     adel_pc = anextstep;						\
-    ainit(achild(1));							\
+    a_ar->init(0, f );							\
     adel_wait = millis() + t;						\
-    adel_debug("aforatmost", a_my_index, __LINE__);			\
+    adel_debug("aforatmost", __LINE__);					\
   case anextstep:							\
-    acall(f_status, 1, f);						\
-    if (f_status.notdone() &&						\
-	millis() < adel_wait)						\
+    f_status = a_ar->runchild(0);					\
+    if (f_status.notdone() && millis() < adel_wait)			\
       return astatus::ACONT;						\
+    a_ar->clear(0);							\
     adel_condition = f_status.done();					\
     adel_pc = alaterstep(1);						\
   case alaterstep(1):							\
@@ -342,14 +359,33 @@ public:
  */
 #define atogether( f , g )						\
     adel_pc = anextstep;						\
-    ainit(achild(1));							\
-    ainit(achild(2));							\
-    adel_debug("atogether", a_my_index, __LINE__);			\
+    a_ar->init(0, f );							\
+    a_ar->init(1, g );							\
+    adel_debug("atogether", __LINE__);					\
   case anextstep:							\
-    acall(f_status, 1, f);						\
-    acall(g_status, 2, g);						\
+    f_status = a_ar->runchild(0);					\
+    g_status = a_ar->runchild(1);					\
+    if (f_status.notdone() || g_status.notdone())			\
+      return astatus::ACONT;						\
+    a_ar->clear(0);							\
+    a_ar->clear(1);
+
+/** a4together
+ *
+ *  Semantics: execute f and g asynchronously, until *both* are done
+ *  (both return false). Example use:
+ *      atogether( flash_led(), play_sound() );
+#define a4together( e, f , g , h, )					\
+    adel_pc = anextstep;						\
+    a_ar->init(0, f );							\
+    a_ar->init(1, g );							\
+    adel_debug("atogether", __LINE__);					\
+  case anextstep:							\
+    f_status = a_ar->runchild(0);					\
+    g_status = a_ar->runchild(1);					\
     if (f_status.notdone() || g_status.notdone())			\
       return astatus::ACONT;
+*/
 
 /** auntil
  *
@@ -367,14 +403,16 @@ public:
  */
 #define auntil( f , g )							\
     adel_pc = anextstep;						\
-    ainit(achild(1));							\
-    ainit(achild(2));							\
-    adel_debug("auntil", a_my_index, __LINE__);				\
+    a_ar->init(0, f );							\
+    a_ar->init(1, g );							\
+    adel_debug("auntil", __LINE__);					\
   case anextstep:							\
-    acall(f_status, 1, f);						\
-    acall(g_status, 2, g);						\
+    f_status = a_ar->runchild(0);					\
+    g_status = a_ar->runchild(1);					\
     if (f_status.notdone() && g_status.notdone())			\
       return astatus::ACONT;						\
+    a_ar->clear(0);							\
+    a_ar->clear(1);							\
     adel_condition = f_status.done();					\
     adel_pc = alaterstep(1);						\
   case alaterstep(1):							\
@@ -398,7 +436,7 @@ public:
 #define aramp( T, v, start, end)					\
     adel_pc = anextstep;						\
     adel_ramp_start = millis();						\
-    adel_debug("aramp", a_my_index, __LINE__);				\
+    adel_debug("aramp", __LINE__);					\
  case anextstep:							\
     while ((millis() <= (adel_ramp_start + T)) &&			\
            ((v = map(millis(), adel_ramp_start, adel_ramp_start + T, start, end)) == v) && \
@@ -413,20 +451,20 @@ public:
  */
 #define alternate( f , g )						\
     adel_pc = anextstep;						\
-    ainit(achild(1));							\
-    ainit(achild(2));							\
+    a_ar->init(0, f );							\
+    a_ar->init(1, g );							\
     adel_condition = true;						\
-    adel_debug("alternate", a_my_index, __LINE__);			\
+    adel_debug("alternate", __LINE__);					\
   case anextstep:							\
     if (adel_condition) {						\
-      acall(f_status, 1, f);						\
+      f_status = a_ar->runchild(0);					\
       if (f_status.cont()) return astatus::ACONT;			\
       if (f_status.yield()) {						\
 	adel_condition = false;						\
         return astatus::ACONT;						\
       }									\
     } else {								\
-      acall(g_status, 2, g);						\
+      g_status = a_ar->runchild(1);					\
       if (g_status.cont()) return astatus::ACONT;			\
       if (g_status.yield()) {						\
         adel_condition = true;						\
@@ -442,7 +480,7 @@ public:
 #define ayourturn(v)							\
     adel_pc = anextstep;						\
     acallerar->val = v;							\
-    adel_debug("ayourturn", a_my_index, __LINE__);			\
+    adel_debug("ayourturn", __LINE__);					\
     return astatus::AYIELD;						\
   case anextstep: ;
 
@@ -459,7 +497,7 @@ public:
  */
 #define afinish							\
     adel_pc = ADEL_FINALLY;					\
-    adel_debug("afinish", a_my_index, __LINE__);		\
+    adel_debug("afinish", __LINE__);				\
     return astatus::ACONT;
 
 #endif
