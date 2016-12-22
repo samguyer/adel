@@ -6,13 +6,6 @@
 #ifndef ADEL_V4
 #define ADEL_V4
 
-/** Adel runtime
- *
- *  Stack of function states. Since Adel is emulating concurrency, the
- *  stack is not a linear data structure, but a tree of actively running
- *  functions. 
-*/
-
 #define ADEL_FINALLY 0xFFFF
 
 /** adel status
@@ -50,34 +43,41 @@ public:
 class AdelAR
 {
 private:
+  // -- Each Adel function can have up three callees running simulatenously
+  //    (see a3together, for example)
   AdelAR * children[3];
-  uint32_t val;
 
 public:
-  AdelAR()
-    : val(0)
-  {
+  AdelAR() {
     children[0] = 0;
     children[1] = 0;
     children[2] = 0;
   }
 
+  // -- Clear a particular child function, deleting its activation record
   inline void clear(int i) {
     if (children[i]) {
       delete children[i];
       children[i] = 0;
     }
   }
-  
+
+  // -- Initialize a child function. Typically, the "ar" argument is the
+  //    result of calling a user's function, which creates the new AR with
+  //    the lambda inside it.
   inline void init(int i, AdelAR * ar) {
     clear(i);
     children[i] = ar;
   }
 
+  // -- Run the adel function one time. Each local AR overrides this
+  //    function to invoke its lambda.
   virtual astatus run() = 0;
 
+  // -- Most of the time, the parent AR calls run
   inline astatus runchild(int i) const { return children[i]->run(); }
 
+  // -- Delete this AR, and the ARs of all of its children functions
   ~AdelAR() {
     clear(0);
     clear(1);
@@ -107,27 +107,29 @@ public:
      body(the_lambda)
   {}
 
-  virtual astatus run() {
-    return body(this);
-  }
+  // -- Invoke the lambda, passing its own AR pointer, so it can create and
+  //    attach ARs for children functions.
+  virtual astatus run() { return body(this); }
 };
 
 /** Runtime stack
  *
- * This class encapsulates a single control stack. The top-level macros,
- * such as aonce and arepeat, each create a separate instance of this class
- * to hold their activation records. Activation records are structured as a
- * tree. Each pass over the currently active functions starts with a call
- * to run() on the root.
+ * This class encapsulates a single control stack. Activation records are
+ * structured as a tree, since multiple functions can be active at the same
+ * time. Each pass over the currently active functions starts with a call
+ * to run() on the root. The top-level loop macros, such as aonce and
+ * arepeat, each create a separate instance of this class to hold their
+ * activation records.
  */
 class AdelRuntime
 {
 public:
 
-  // -- Pointer to the current runtime object
+  // -- Global pointer to the current stack
   static AdelRuntime * curStack;
 
 private:
+  // -- Root of this tree of activation records
   AdelAR * root;
 
 public:
@@ -135,12 +137,17 @@ public:
     : root(0)
   {}
 
+  // -- A null root signals that the function is not running
   inline bool not_running() const { return root == 0; }
-  
+
+  // -- Initialize a new run
   inline void init(AdelAR * ar) { root = ar; }
 
+  // -- Run a single pass over the tree. This function is executed many,
+  //    many times as the functions make progress.
   inline astatus run() { return root->run(); }
 
+  // -- Reset the run, deleting all activation records
   inline void reset() {
     if (root) {
       delete root;
@@ -184,21 +191,12 @@ public:
 
 // ------------------------------------------------------------
 //   Top-level functions for use in Arduino loop()
-
-/** aonce
- *
- *  Run an adel function from the top one time. Once complete, .
- */
-#define aonce( f )							\
-  static AdelRuntime agensym(aruntime, __LINE__);			\
-  AdelRuntime::curStack = & agensym(aruntime, __LINE__);		\
-  if (AdelRuntime::curStack->not_running())				\
-     AdelRuntime::curStack->init( f );					\
-  AdelRuntime::curStack->run();
+//
+//   You can put as many of these as you'd like in your loop
 
 /** aforever
  *
- *  Run the top adel function over and over.
+ *  Run the given Adel function over and over.
  */
 #define arepeat( f )							\
   static AdelRuntime agensym(aruntime, __LINE__);			\
@@ -212,7 +210,7 @@ public:
 
 /** aevery
  *  
- *  Run this function every T milliseconds.
+ *  Run the given Adel function every T milliseconds.
  */
 #define aevery( T, f )							\
   static AdelRuntime agensym(aruntime, __LINE__);			\
@@ -225,6 +223,19 @@ public:
       agensym(anexttime,__LINE__) < millis()) {				\
     AdelRuntime::curStack->reset();					\
   }
+
+/** aonce
+ *
+ *  Run an adel function from the top one time. Once complete, the program
+ *  stops running and nothing will happen on the microcontroller until it
+ *  is restarted. Probably not what you want!
+ */
+#define aonce( f )							\
+  static AdelRuntime agensym(aruntime, __LINE__);			\
+  AdelRuntime::curStack = & agensym(aruntime, __LINE__);		\
+  if (AdelRuntime::curStack->not_running())				\
+     AdelRuntime::curStack->init( f );					\
+  AdelRuntime::curStack->run();
 
 // ------------------------------------------------------------
 //   Function prologue and epilogue
@@ -249,20 +260,23 @@ public:
 
 /** abegin
  *
- * Always add abegin and aend to every adel function. Note that the lambda
- * is defined in such a way that all local variables above it are captured
- * and later copied into the LocalAdelAR. 
+ * Always add abegin and aend to every adel function. These macros wrap the
+ * body of the function in a lambda, which is used as a continuation during
+ * concurrent execution. In this sense, the user's function just serves as
+ * an initialization function to set up the continuation. Note that the
+ * lambda is defined in such a way that all local variables above it are
+ * captured and later copied into the LocalAdelAR.
  */
 #define abegin								\
   const char * a_fun_name = __FUNCTION__;				\
   /* -- These variables become the persistent state in the closure */	\
   uint16_t adel_pc = 0;							\
-  uint32_t adel_ramp_start = 0;						\
   uint32_t adel_wait = 0;						\
   uint8_t  adel_condition = 0;						\
-  /* -- Start the lambda -- the body of the function */			\
+  uint32_t adel_ramp_start = 0;						\
+  /* ----- Start the lambda -- the body of the function ----- */	\
   auto adel_body = [=](AdelAR * a_ar) mutable {				\
-    astatus f_status, g_status;						\
+    astatus f_status, g_status, h_status;					\
     bool a_skipahead = false;						\
     if (adel_pc == 0) { adel_debug("abegin", __LINE__);}		\
     switch (adel_pc) {							\
@@ -270,6 +284,8 @@ public:
 
 /** aend
  *
+ *  Create and return a local activation record with the new lambda
+ *  embedded in it.
  */
 #define aend								\
         case ADEL_FINALLY: ;						\
@@ -278,12 +294,8 @@ public:
       adel_pc = ADEL_FINALLY;						\
       return astatus::ADONE;						\
     };									\
-  LocalAdelAR<decltype(adel_body)> * a_this_ar = 0;			\
-  a_this_ar = new LocalAdelAR<decltype(adel_body)>(adel_body);		\
-  Serial.print(a_fun_name); \
-  Serial.print(" @ "); \
-  Serial.println((int) a_this_ar, HEX); \
-  return a_this_ar;
+  /* -- Make and return the new AR */					\
+  return new LocalAdelAR<decltype(adel_body)>(adel_body);
 
 // ------------------------------------------------------------
 //   General Adel functions
@@ -370,22 +382,22 @@ public:
     a_ar->clear(0);							\
     a_ar->clear(1);
 
-/** a4together
+/** a3together
  *
- *  Semantics: execute f and g asynchronously, until *both* are done
- *  (both return false). Example use:
- *      atogether( flash_led(), play_sound() );
-#define a4together( e, f , g , h, )					\
+ *  Semantics: execute f, g, and h asynchronously, until *all* are done.
+ */
+#define a3together( f , g , h )					\
     adel_pc = anextstep;						\
     a_ar->init(0, f );							\
     a_ar->init(1, g );							\
-    adel_debug("atogether", __LINE__);					\
+    a_ar->init(2, h );							\
+    adel_debug("a3together", __LINE__);					\
   case anextstep:							\
     f_status = a_ar->runchild(0);					\
     g_status = a_ar->runchild(1);					\
-    if (f_status.notdone() || g_status.notdone())			\
+    h_status = a_ar->runchild(2);					\
+    if (f_status.notdone() || g_status.notdone() || h_status.notdone())	\
       return astatus::ACONT;
-*/
 
 /** auntil
  *

@@ -33,7 +33,9 @@ adel getUserInput(char buffer[], uint8_t maxSize)
   memset(buffer, 0, maxSize);
   count = 0;
   do {
-    count += Serial.readBytes(buffer+count, maxSize);
+    // count += Serial.readBytes(buffer+count, maxSize);
+    buffer[count] = Serial.read();
+    count++;
     adelay(10);
   } while( (count < maxSize) && !(Serial.available() == 0) );
 

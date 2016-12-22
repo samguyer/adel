@@ -7,12 +7,12 @@
  *  Uses the aramp command to turn light on/off over a specific period of time
  */
 
-#define LED_PIN 5
-#define BUTTON_PIN 4
+#define LED_PIN 3
+#define BUTTON_PIN 6
 
 void setup()
 {
-  delay(1000);
+  delay(500);
   Serial.begin(9600);
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT);
@@ -79,25 +79,25 @@ adel rampdownlight(int pin, int howlong)
   aend;
 }
 
-adel buttonblink()
+adel gentlelight()
 {
   int howlong;
   abegin:
-  // -- Wait for button to get started
-  andthen( waitbutton(BUTTON_PIN) );
   // -- Initially, make the light go fast
-  howlong = 1000;
+  howlong = 200;
   while (1) {
-    auntil( waitbutton(BUTTON_PIN) , rampuplight(LED_PIN, howlong) );
-    auntil( waitbutton(BUTTON_PIN) , rampdownlight(LED_PIN, howlong) );
+    andthen( waitbutton(BUTTON_PIN) );
+    andthen( rampuplight(LED_PIN, howlong) );
+    andthen( waitbutton(BUTTON_PIN) );
+    andthen( rampdownlight(LED_PIN, howlong) );
     // -- On each cycle, make it go slower
-    howlong += 1000;
+    howlong += 200;
   }
   aend;
 }
 
 void loop()
 {
-  arepeat( buttonblink() );
+  arepeat( gentlelight() );
 }
 

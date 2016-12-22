@@ -1,3 +1,5 @@
+// #define ADEL_DEBUG 1
+
 #include <adel.h>
 
 /** Very simple Adel program
@@ -10,8 +12,12 @@
 
 void setup()
 {
+  delay(1000);
+  Serial.begin(9600);
   pinMode(LED_PIN_1, OUTPUT);
   pinMode(LED_PIN_2, OUTPUT);
+  digitalWrite(LED_PIN_1, LOW);
+  digitalWrite(LED_PIN_2, LOW);
 }
 
 /** blink

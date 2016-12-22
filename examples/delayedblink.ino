@@ -39,7 +39,7 @@ adel delayedbutton(int pin)
 {
   abegin:
   andthen( waitbutton(pin) );
-  adelay(1000);
+  adelay(500);
   aend;
 }
 
