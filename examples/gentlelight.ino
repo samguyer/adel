@@ -4,7 +4,8 @@
 
 /** Use a button to turn a light on/off slowly
  *  
- *  Uses the aramp command to turn light on/off over a specific period of time
+ *  Uses the aramp command to turn light on/off over a specific period of time.
+ *  This version makes the interval longer and longer.
  */
 
 #define LED_PIN 3
