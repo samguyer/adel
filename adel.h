@@ -56,9 +56,10 @@ public:
 
   // -- Clear a particular child function, deleting its activation record
   inline void clear(int i) {
-    if (children[i]) {
-      delete children[i];
+    AdelAR * ch = children[i];
+    if (ch) {
       children[i] = 0;
+      delete ch;
     }
   }
 
@@ -78,7 +79,7 @@ public:
   inline astatus runchild(int i) const { return children[i]->run(); }
 
   // -- Delete this AR, and the ARs of all of its children functions
-  ~AdelAR() {
+  virtual ~AdelAR() {
     clear(0);
     clear(1);
     clear(2);
@@ -336,6 +337,17 @@ public:
     adel_debug("await", __LINE__);					\
   case anextstep:							\
     if ( ! ( c ) ) return astatus::ACONT
+
+/** atransition
+ */
+#define atransition( c1, c2 )						\
+    adel_pc = anextstep;						\
+    adel_debug("atransition", __LINE__);				\
+  case anextstep:							\
+    if ( ! ( c1 ) ) return astatus::ACONT;				\
+    adel_pc = alaterstep(1);						\
+  case alaterstep(1):							\
+
 
 /** aforatmost
  *
