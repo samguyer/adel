@@ -305,8 +305,6 @@ In general, debugging microcontroller programs is tough. Adel offers some help i
 
 (1) Do not use `switch` or `break` statements inside Adel functions. The co-routine implementation encloses all function bodies in a giant switch statement to allow them to be reentrant. Adding other switch and break statements can have unpredictable results.
 
-(2) The internal stack that keeps track of concurrent functions has a limited depth determined at compile time. The default depth is 5, which is fine for most applications, but you can override this number by adding #define ADEL_STACK_DEPTH before you include the Adel header.
+(2) Loops, like `for` and `while`, are perfectly fine to use inside Adel functions, but make sure that there is at least one Adel function (like `adelay`) in the body, so that the loop does not stall the rest of the program.
 
-(3) Loops, like `for` and `while`, are perfectly fine to use inside Adel functions, but make sure that there is at least one Adel function (like `adelay`) in the body, so that the loop does not stall the rest of the program.
-
-(4) All Adel functions must be called within one of the concurrency constructs. You should never call an Adel function directly as a regular statement. It will not do what you want (and probably won't even compile).
+(3) All Adel functions must be called within one of the concurrency constructs. You should never call an Adel function directly as a regular statement. It will not do what you want (and probably won't even compile).
