@@ -223,6 +223,7 @@ public:
   if (agensym(f_status, __LINE__).done() &&				\
       agensym(anexttime,__LINE__) < millis()) {				\
     AdelRuntime::curStack->reset();					\
+    agensym(anexttime,__LINE__) += T;					\
   }
 
 /** aonce
