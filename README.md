@@ -50,7 +50,9 @@ loop() {
  }
  ```
 
-Aside from the obvious complexity of this code, there are a few specific problems. First, all behaviors that might occur concurrently must be part of the same loop with the same timing control. The modularity is completely gone. Second, we need to introduce a global variable for each behavior that remembers the last time it executed. The code would become significantly more complex if we wanted to blink the lights for a specific amount of time, or if we had other modes where the lights are not blinking. Similar problems arise with input as well. Imagine if we want to blink a light until a button is pressed (inluding debouncing the button signal). 
+Aside from the obvious complexity of this code, there are some specific problems. First, all behaviors that might occur concurrently must be part of the same loop with the same timing control. The modularity is completely gone. Second, we need to introduce a global variable for each behavior that remembers the last time it executed. The code would become significantly more complex if we wanted to blink the lights for a specific amount of time, or if we had other modes where the lights are not blinking. Similar problems arise with input as well. Imagine if we want to blink a light until a button is pressed (inluding debouncing the button signal). 
+
+## The Adel API
 
 The central problem is the `delay()` function, which makes timing easy for individual behaviors, but blocks the whole processor. The key feature of Adel, therefore, is an asynchronous delay function called `adelay` (hence the name Adel). The `adelay` function works just like `delay`, but allows other code to run concurrently. 
 
@@ -60,13 +62,12 @@ Concurrency in Adel is specified at the function granularity, using a fork-join 
 * `andthen( f )` : run Adel function `f` to completion before continuing (synchronous execution).
 * `await( c )` : wait asynchronously until condition `c` is true (`c` must *not* be an Adel function).
 * `aforatmost( T, f )` : run Adel function `f` until it completes, or T milliseconds (whichever comes first)
-* `atogether( f , g )` : run Adel functions `f` and `g` concurrently until they **both** finish.
+* `aboth( f , g )` : run Adel functions `f` and `g` concurrently until they **both** finish.
 * `auntil( f , g ) { ... } else { ... }` : run Adel functions `f` and `g` concurrently until **one** of them finishes. Executes the true branch if `f` finishes first or the false branch if `g` finishes first.
 * `aramp( T, v, min, max) { ... }` : execute the body for T milliseconds; each time it is executed, v will be set to a value between min and max proportional to the fraction of T that has elapsed. Useful for turning something on or off over a specific period of time.
 * `afinish` : finish executing the current function (like a return)
 * `alternate( f , g )` : run `f` continuously until it yields by calling `ayourturn`; then run `g` until it yields. Continue back and forth until either function completes.
-* `ayourturn( v )` : use in a function being called by `alternate` to yield control to the other function. The value `v` is made available to the other function.
-* `amyturn` : gets the value passed through by `ayourturn`.
+* `ayourturn` : use in a function being called by `alternate` to yield control to the other function (like "yield" in conventional coroutines).
 
 Using these routines we can rewrite the blink routine (below). Every Adel function contains a minimum of three things: return type `adel`, and macros `abegin:` and `aend` at the begining and end of the function. (**NOTE** that ``abegin`` is always followed by a colon). But otherwise, the code is almost identical.
 
@@ -87,12 +88,12 @@ adel blink(int some_pin, int N)
 Notice that I added a `while (1)` infinite loop -- this function will blink the light forever, or until it is stopped by its caller. **And that's ok** because it will not stop other code from running. As a result, we can execute blink concurrently, like this:
 
 ```{c++}
-atogether( blink(3, 500), blink(4, 500) );
+aboth( blink(3, 500), blink(4, 500) );
 ```
 
 This code does exactly what we want: it blinks the two lights at different intervals at the same time. Notice also that we have two instances of blink doing slightly different things concurrently -- this kind of modularity and reuse is much harder to achieve in the traditional coding style.
 
-The `atogether` macro waits until both functions are complete, which is not always desirable. For example, we might want to blink a light until a button is pressed. Assuming we have a `button` function (shown later), we can use the `auntil` construct:
+The `aboth` macro waits until both functions are complete, which is not always desirable. For example, we might want to blink a light until a button is pressed. Assuming we have a `button` function (shown later), we can use the `auntil` construct:
 
 ```{c++}
 auntil( button(pin), blink(3, 350) );
@@ -204,22 +205,22 @@ Finally, do not put any other code above the `abegin` -- it will be executed at 
 
 Classic coroutines allow a function to yield to its caller **without** losing track of where it is currently executing. Subsequent entry to the function continues where it left off. The problem with this approach is that it requires an explicit "init" to start the function, followed by repeated invocations ("next") until it is done. 
 
-Instead, Adel limits this behavior to single `alternate` construct, which takes two functions and alternates executing then until either one finishes. A function chooses when to let the other function execute by calling `ayourturn`, which is like "yield". A single integer value can be passed between them to communicate a value. In this example the button routine is augmented with a yield when the button is held down; the value passed is how long it has been held. We can use this version to make an LED get brighter and brighter until the button is released.
-
-Here is the augmented button routine. It uses a local variable to keep track of how much time has elapsed since the button was initially pressed.
+Instead, Adel limits this behavior to single `alternate` construct, which takes two functions and alternates executing then until either one finishes. A function chooses when to let the other function execute by calling `ayourturn`, which is like "yield". In this example the button routine is augmented with a yield when the button is held down. We can use this version to make an LED get brighter and brighter until the button is released. We use a global variable `delta_t` to communicate the amount of time the button has been held. Here is the augmented button routine:
 
 ```{c++}
+uint32_t delta_t;
 adel button(int pin)
 {
   uint32_t starttime;
   abegin:
     while (1) {
       await (digitalRead(pin) == HIGH);
-      starttime = millis();
       adelay (50);
       if (digitalRead(pin) == HIGH) {
+         starttime = millis();
          while (digitalRead(pin) != LOW) {
-            ayourturn(millis() - starttime);
+            delta_t = millis() - starttime;
+            ayourturn;
          }
          afinish;
       }
@@ -229,7 +230,7 @@ adel button(int pin)
 }
 ```
 
-Here is a simple function that receives these values and sets the LED brightness accordingly. Notice the use of `amyturn`, which gets the value sent by the button. The `map` function is provided by the Arduino standard library; it just maps an integer value from one range to another range. In this case, we map the time (in milliseconds, from 0 to 10 seconds) to the brightness, which ranges from 0 to 255.
+Here is a simple function that receives these values and sets the LED brightness accordingly. The `map` function is provided by the Arduino standard library; it just maps an integer value from one range to another range. In this case, we map the time (in milliseconds, from 0 to 10 seconds) to the brightness, which ranges from 0 to 255.
 
 ```{c++}
 adel brighten(int pin)
@@ -239,8 +240,8 @@ adel brighten(int pin)
     level = 0;
     while (1) {
       analogWrite(pin, level);
-      ayourturn(0);
-      level = map(amyturn, 0, 10000, 0, 256);
+      ayourturn;
+      level = map(delta_t, 0, 10000, 0, 256);
     }
     
   aend;
