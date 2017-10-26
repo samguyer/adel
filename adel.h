@@ -1,3 +1,16 @@
+
+/***********************************************************************
+ *
+ * Adel Microcontroller Concurrency Library
+ *
+ * (c) 2017 Samuel Z. Guyer
+ * 
+ * A cooperative concurrency library for Arduino (and similar devices).
+ *
+ * github.com/samguyer/adel
+ *
+ ***********************************************************************/
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
