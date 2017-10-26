@@ -50,7 +50,7 @@ loop() {
  }
  ```
 
-Aside from the obvious complexity of this code, there are a couple of specific problems. First, all behaviors that might occur concurrently must be part of the same loop with the same timing control. The modularity is completely gone. Second, we need to introduce a global variable for each behavior that remembers the last time it executed. The code would become significantly more complex if we wanted to blink the lights for a specific amount of time, or if we had other modes where the lights are not blinking. Similar problems arise with input as well. Imagine if we want to blink a light until a button is pressed (inluding debouncing the button signal). 
+Aside from the obvious complexity of this code, there are a few specific problems. First, all behaviors that might occur concurrently must be part of the same loop with the same timing control. The modularity is completely gone. Second, we need to introduce a global variable for each behavior that remembers the last time it executed. The code would become significantly more complex if we wanted to blink the lights for a specific amount of time, or if we had other modes where the lights are not blinking. Similar problems arise with input as well. Imagine if we want to blink a light until a button is pressed (inluding debouncing the button signal). 
 
 The central problem is the `delay()` function, which makes timing easy for individual behaviors, but blocks the whole processor. The key feature of Adel, therefore, is an asynchronous delay function called `adelay` (hence the name Adel). The `adelay` function works just like `delay`, but allows other code to run concurrently. 
 
@@ -68,7 +68,7 @@ Concurrency in Adel is specified at the function granularity, using a fork-join 
 * `ayourturn( v )` : use in a function being called by `alternate` to yield control to the other function. The value `v` is made available to the other function.
 * `amyturn` : gets the value passed through by `ayourturn`.
 
-Using these routines we can rewrite the blink routine (below). Notice that I added a `while (1)` infinite loop -- this function will blink the light forever, or until it is stopped by its caller. *And that's ok* because it will not stop other code from running.
+Using these routines we can rewrite the blink routine (below). Every Adel function contains a minimum of three things: return type `adel`, and macros `abegin:` and `aend` at the begining and end of the function. (**NOTE** that ``abegin`` is always followed by a colon). But otherwise, the code is almost identical.
 
 ```{c++}
 adel blink(int some_pin, int N) 
@@ -84,7 +84,7 @@ adel blink(int some_pin, int N)
 }
 ```
 
-Every Adel function contains a minimum of three things: return type `adel`, and macros `abegin:` and `aend` at the begining and end of the function. (**NOTE** that ``abegin`` is always followed by a colon). But otherwise, the code is almost identical. The key feature is that we can execute blink concurrently, like this:
+Notice that I added a `while (1)` infinite loop -- this function will blink the light forever, or until it is stopped by its caller. **And that's ok** because it will not stop other code from running. As a result, we can execute blink concurrently, like this:
 
 ```{c++}
 atogether( blink(3, 500), blink(4, 500) );
@@ -198,7 +198,7 @@ First, only variables above the `abegin` are persistent across Adel calls (such 
 
 Second, initializers will probablty not work as expected, so make sure you initialize your variables in the code following `abegin`.
 
-Finally, do not put any other code above the `abegin` -- it will be executed as unexpected times.
+Finally, do not put any other code above the `abegin` -- it will be executed at unexpected times.
 
 ## Your turn, my turn
 
