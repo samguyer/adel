@@ -44,7 +44,7 @@ class AdelAR
 {
 private:
   // -- Each Adel function can have up three callees running simulatenously
-  //    (see a3together, for example)
+  //    (see athree, for example)
   AdelAR * children[3];
 
 public:
@@ -193,7 +193,7 @@ public:
 // ------------------------------------------------------------
 //   Top-level functions for use in Arduino loop()
 //
-//   You can put as many of these as you'd like in your loop
+//   You can put as many of these as you'd like in your loop function
 
 /** aforever
  *
@@ -274,12 +274,10 @@ public:
   /* -- These variables become the persistent state in the closure */	\
   uint16_t adel_pc = 0;							\
   uint32_t adel_wait = 0;						\
-  uint8_t  adel_condition = 0;						\
   uint32_t adel_ramp_start = 0;						\
   /* ----- Start the lambda -- the body of the function ----- */	\
   auto adel_body = [=](AdelAR * a_ar) mutable {				\
-    astatus f_status, g_status, h_status;					\
-    bool a_skipahead = false;						\
+    astatus f_status, g_status, h_status;				\
     if (adel_pc == 0) { adel_debug("abegin", __LINE__);}		\
     switch (adel_pc) {							\
    case 0
@@ -339,17 +337,6 @@ public:
   case anextstep:							\
     if ( ! ( c ) ) return astatus::ACONT
 
-/** atransition
- */
-#define atransition( c1, c2 )						\
-    adel_pc = anextstep;						\
-    adel_debug("atransition", __LINE__);				\
-  case anextstep:							\
-    if ( ! ( c1 ) ) return astatus::ACONT;				\
-    adel_pc = alaterstep(1);						\
-  case alaterstep(1):							\
-
-
 /** aforatmost
  *
  *  Semantics: do f until it completes, or until the timeout. The structure
@@ -360,6 +347,9 @@ public:
  *    aforatmost( 100, f ) {
  *        // -- Timed out -- do something
  *    }
+ *
+ *  The way this is implemented in adel is sneaky -- we use the adel PC as
+ *  a way to remember whether the function finished or not.
  */
 #define aforatmost( t, f )						\
     adel_pc = anextstep;						\
@@ -371,22 +361,23 @@ public:
     if (f_status.notdone() && millis() < adel_wait)			\
       return astatus::ACONT;						\
     a_ar->clear(0);							\
-    adel_condition = f_status.done();					\
-    adel_pc = alaterstep(1);						\
+    if (f_status.done()) adel_pc = alaterstep(1);			\
+    else                 adel_pc = alaterstep(2);			\
   case alaterstep(1):							\
-    if ( ! adel_condition)
+  case alaterstep(2):							\
+  if ( adel_pc != alaterstep(1) )
     
-/** atogether
+/** aboth
  *
  *  Semantics: execute f and g asynchronously, until *both* are done
  *  (both return false). Example use:
- *      atogether( flash_led(), play_sound() );
+ *      aboth( flash_led(), play_sound() );
  */
-#define atogether( f , g )						\
+#define aboth( f , g )							\
     adel_pc = anextstep;						\
     a_ar->init(0, f );							\
     a_ar->init(1, g );							\
-    adel_debug("atogether", __LINE__);					\
+    adel_debug("aboth", __LINE__);					\
   case anextstep:							\
     f_status = a_ar->runchild(0);					\
     g_status = a_ar->runchild(1);					\
@@ -395,16 +386,16 @@ public:
     a_ar->clear(0);							\
     a_ar->clear(1);
 
-/** a3together
+/** athree
  *
  *  Semantics: execute f, g, and h asynchronously, until *all* are done.
  */
-#define a3together( f , g , h )					\
+#define athree( f , g , h )						\
     adel_pc = anextstep;						\
     a_ar->init(0, f );							\
     a_ar->init(1, g );							\
     a_ar->init(2, h );							\
-    adel_debug("a3together", __LINE__);					\
+    adel_debug("athree", __LINE__);					\
   case anextstep:							\
     f_status = a_ar->runchild(0);					\
     g_status = a_ar->runchild(1);					\
@@ -415,7 +406,7 @@ public:
 /** auntil
  *
  *  Semantics: execute f and g until either one of them finishes (contrast
- *  with atogether). This construct behaves like a conditional statement:
+ *  with aboth).  This construct behaves like a conditional statement:
  *  it can be followed by a true statement and optional false statement,
  *  which are executed depending on whether the first function finished
  *  first or the second one did. Example use:
@@ -438,10 +429,11 @@ public:
       return astatus::ACONT;						\
     a_ar->clear(0);							\
     a_ar->clear(1);							\
-    adel_condition = f_status.done();					\
-    adel_pc = alaterstep(1);						\
+    if (f_status.done()) adel_pc = alaterstep(1);			\
+    else                 adel_pc = alaterstep(2);			\
   case alaterstep(1):							\
-    if (adel_condition)
+  case alaterstep(2):							\
+  if ( adel_pc == alaterstep(1) )
 
 /** ramp
  *
@@ -475,45 +467,37 @@ public:
  *  where it left off. Continue until either one finishes.
  */
 #define alternate( f , g )						\
-    adel_pc = anextstep;						\
+    adel_pc = alaterstep(0);						\
     a_ar->init(0, f );							\
     a_ar->init(1, g );							\
-    adel_condition = true;						\
     adel_debug("alternate", __LINE__);					\
-  case anextstep:							\
-    if (adel_condition) {						\
-      f_status = a_ar->runchild(0);					\
-      if (f_status.cont()) return astatus::ACONT;			\
-      if (f_status.yield()) {						\
-	adel_condition = false;						\
+  case alaterstep(0):							\
+    f_status = a_ar->runchild(0);					\
+    if (f_status.cont()) return astatus::ACONT;				\
+    if (f_status.yield()) {						\
+	adel_pc = alaterstep(1);					\
         return astatus::ACONT;						\
-      }									\
-    } else {								\
-      g_status = a_ar->runchild(1);					\
-      if (g_status.cont()) return astatus::ACONT;			\
-      if (g_status.yield()) {						\
-        adel_condition = true;						\
+    } else								\
+        adel_pc = alaterstep(2);					\
+  case alaterstep(1):							\
+    g_status = a_ar->runchild(1);					\
+    if (g_status.cont()) return astatus::ACONT;				\
+    if (g_status.yield()) {						\
+	adel_pc = alaterstep(0);					\
         return astatus::ACONT;						\
-      }									\
-    }
+    }									\
+  case alaterstep(2):
 
 /** ayourturn
  *
  *  Use only in functions being called by "alternate". Stop executing this
  *  function and start executing the other function.
  */
-#define ayourturn(v)							\
+#define ayourturn							\
     adel_pc = anextstep;						\
-    acallerar->val = v;							\
     adel_debug("ayourturn", __LINE__);					\
     return astatus::AYIELD;						\
   case anextstep: ;
-
-/** amyturn
- *
- *  Get the value passed to this function by ayourturn
- */
-#define amyturn acallerar->val
 
 /** afinish
  * 
