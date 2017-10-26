@@ -215,9 +215,9 @@ adel button(int pin)
   abegin:
     while (1) {
       await (digitalRead(pin) == HIGH);
-      starttime = millis();
       adelay (50);
       if (digitalRead(pin) == HIGH) {
+         starttime = millis();
          while (digitalRead(pin) != LOW) {
             delta_t = millis() - starttime;
             ayourturn;
